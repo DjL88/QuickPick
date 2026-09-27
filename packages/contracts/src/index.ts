@@ -549,7 +549,7 @@ export function normalisePickingStructure(
       );
       const group: PickingGroup = {
         id: groupId,
-        type: explicitContainerType || descriptor.type,
+        type: descriptor.type,
         label: String(
           raw[`${descriptor.key}Label`] ||
             raw.name ||
