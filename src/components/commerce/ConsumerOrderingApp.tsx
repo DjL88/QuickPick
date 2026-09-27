@@ -117,37 +117,37 @@ export const ConsumerOrderingApp: React.FC<ConsumerOrderingAppProps> = ({
   };
 
   return (
-    <div className="min-h-[calc(100vh-56px)] bg-neutral-50/60 text-neutral-800 flex flex-col font-sans">
+    <div className="min-h-[calc(100vh-56px)] bg-[var(--ltx-canvas)] text-[var(--ltx-ink)] flex flex-col font-sans">
       {/* Sub-header / Location Bar */}
-      <div className="bg-white border-b border-neutral-200/80 px-4 py-2.5">
+      <div className="bg-white/90 dark:bg-[var(--ltx-surface)] border-b border-[var(--ltx-border)] px-4 py-2.5">
         <div className="max-w-5xl mx-auto flex items-center justify-between gap-3 text-xs">
           <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded-full bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold">
+            <div className="w-7 h-7 rounded-lg bg-[var(--ltx-brand-soft)] text-[var(--ltx-brand)] flex items-center justify-center font-bold">
               <MapPin className="w-3.5 h-3.5" />
             </div>
             <div className="font-semibold text-neutral-800 flex items-center gap-1.5">
               <span>Delivering to:</span>
-              <span className="text-neutral-900 font-bold underline decoration-emerald-500 underline-offset-2">
+              <span className="text-[var(--ltx-ink)] font-semibold underline decoration-[#6d959f] underline-offset-2">
                 142 Oxford St, London
               </span>
             </div>
           </div>
 
           <div className="flex items-center gap-3">
-            <span className="hidden sm:inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 font-bold text-[11px] border border-emerald-200/60">
-              <Sparkles className="w-3 h-3 text-emerald-600" /> Deliverect Commerce API Connected
+            <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[var(--ltx-brand-soft)] text-[var(--ltx-brand)] font-medium text-[11px]">
+              <PackageCheck className="w-3.5 h-3.5" /> Demo ordering source
             </span>
 
             {/* Floating / Header Basket Trigger */}
             <button
               type="button"
               onClick={() => setIsCartOpen(true)}
-              className="px-3.5 py-1.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-white font-bold flex items-center gap-2 shadow-xs transition-all cursor-pointer"
+              className="px-3.5 py-1.5 rounded-xl ltx-primary text-white font-semibold flex items-center gap-2 transition cursor-pointer"
             >
               <ShoppingBag className="w-4 h-4" />
               <span>Basket</span>
               {totalCartCount > 0 && (
-                <span className="bg-emerald-500 text-neutral-950 px-1.5 py-0.2 rounded-md text-[11px] font-black">
+                <span className="bg-white text-[var(--ltx-brand)] px-1.5 py-0.5 rounded-md text-[11px] font-bold">
                   {totalCartCount}
                 </span>
               )}
@@ -184,16 +184,16 @@ export const ConsumerOrderingApp: React.FC<ConsumerOrderingAppProps> = ({
           <button
             type="button"
             onClick={() => setIsCartOpen(true)}
-            className="w-full h-13 rounded-2xl bg-neutral-900 hover:bg-neutral-800 text-white font-bold text-sm flex items-center justify-between px-5 shadow-2xl shadow-neutral-950/40 border border-neutral-700 transition-all cursor-pointer"
+            className="w-full h-13 rounded-2xl ltx-primary text-white font-semibold text-sm flex items-center justify-between px-5 shadow-xl shadow-[#0d3944]/20 transition cursor-pointer"
           >
             <div className="flex items-center gap-2.5">
-              <span className="w-6 h-6 rounded-full bg-emerald-500 text-neutral-950 font-black text-xs flex items-center justify-center">
+              <span className="w-6 h-6 rounded-full bg-white text-[var(--ltx-brand)] font-bold text-xs flex items-center justify-center">
                 {totalCartCount}
               </span>
               <span>View Basket</span>
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-emerald-400 font-bold">£{totalCartAmount.toFixed(2)}</span>
+              <span className="text-white font-semibold">£{totalCartAmount.toFixed(2)}</span>
               <ArrowRight className="w-4 h-4 text-neutral-400" />
             </div>
           </button>
