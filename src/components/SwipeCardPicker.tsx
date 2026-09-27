@@ -18,11 +18,13 @@ import {
   ShieldAlert,
   Camera,
 } from 'lucide-react';
-import { PickingItem } from '@contracts/index.js';
+import { PickingGroup, PickingItem, getPickAllBlockReasons } from '@contracts/index.js';
+import { OrderGroupRail } from './OrderGroupRail.js';
 import { sounds } from '../lib/audio.js';
 
 interface SwipeCardPickerProps {
   items: PickingItem[];
+  groups?: PickingGroup[];
   onPickUnit: (item: PickingItem, pickAll?: boolean) => void;
   onUnavailable: (item: PickingItem) => void;
   onWeightRequest: (item: PickingItem) => void;
@@ -32,6 +34,7 @@ interface SwipeCardPickerProps {
 
 export const SwipeCardPicker: React.FC<SwipeCardPickerProps> = ({
   items,
+  groups = [],
   onPickUnit,
   onUnavailable,
   onWeightRequest,
@@ -67,6 +70,19 @@ export const SwipeCardPicker: React.FC<SwipeCardPickerProps> = ({
   const totalQty = currentItem.quantity || 1;
   const isMultiQty = totalQty > 1;
   const remainingQty = totalQty - currentPicked;
+  const quickAllAllowed = getPickAllBlockReasons(currentItem).length === 0;
+  const currentGroupItems = currentItem.groupId
+    ? items.filter((item) => item.groupId === currentItem.groupId)
+    : [];
+  const currentGroupHandled = currentGroupItems.filter((item) => item.status !== 'PENDING').length;
+  const pendingGroupItems = currentGroupItems.filter((item) => item.status === 'PENDING');
+  const currentGroup = currentItem.groupId
+    ? groups.find((group) => group.id === currentItem.groupId)
+    : undefined;
+  const groupQuickAllAllowed =
+    currentGroup?.pickAllPolicy === 'SAFE_CHILDREN_ONLY' &&
+    pendingGroupItems.length > 1 &&
+    pendingGroupItems.every((item) => getPickAllBlockReasons(item).length === 0);
 
   const handleTouchStart = (e: React.TouchEvent | React.MouseEvent) => {
     setIsDragging(true);
@@ -121,6 +137,9 @@ export const SwipeCardPicker: React.FC<SwipeCardPickerProps> = ({
 
   return (
     <div className="relative w-full max-w-sm mx-auto flex flex-col items-center">
+      <div className="mb-3 w-full">
+        <OrderGroupRail groups={groups} items={items} />
+      </div>
       {/* Top Item Progress Line */}
       <div className="w-full flex items-center justify-between px-1 mb-2 text-xs">
         <span className="text-neutral-500 font-medium">
@@ -134,6 +153,34 @@ export const SwipeCardPicker: React.FC<SwipeCardPickerProps> = ({
           <span className="text-neutral-400 text-[11px]">Swipe or tap to pick</span>
         )}
       </div>
+
+      {currentGroupItems.length > 1 && (
+        <div className="mb-2 w-full rounded-xl border border-violet-200 bg-violet-50 px-3 py-2">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-violet-700">
+                {currentItem.componentRole ? currentItem.componentRole.replaceAll('_', ' ') : 'Grouped item'}
+              </div>
+              <div className="truncate text-xs font-semibold text-neutral-900">
+                Bundle progress
+              </div>
+            </div>
+            <div className="shrink-0 rounded-full bg-white px-2 py-1 font-mono text-xs font-semibold text-violet-800">
+              {currentGroupHandled}/{currentGroupItems.length}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {groupQuickAllAllowed && (
+        <button
+          type="button"
+          onClick={() => pendingGroupItems.forEach((item) => onPickUnit(item, true))}
+          className="mb-2 min-h-12 w-full rounded-xl border border-violet-200 bg-white px-4 text-sm font-semibold text-violet-800 shadow-sm transition active:scale-[0.98]"
+        >
+          Pick all {pendingGroupItems.length} safe bundle items
+        </button>
+      )}
 
       {/* Main Interactive Card Stack */}
       <div className="relative w-full h-[435px] select-none touch-none">
@@ -186,9 +233,9 @@ export const SwipeCardPicker: React.FC<SwipeCardPickerProps> = ({
           <div className="flex items-center justify-between z-10 text-xs">
             <div className="flex items-center gap-1.5 text-neutral-700 font-medium">
               <MapPin className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
-              <span>{currentItem.aisle || 'Aisle 1'}</span>
+              <span>{currentItem.aisle || 'Location not set'}</span>
               <span className="text-neutral-300">·</span>
-              <span>{currentItem.shelf || 'Bay 1'}</span>
+              <span>{currentItem.shelf || 'Bay not set'}</span>
             </div>
 
             <div className="flex items-center gap-1.5 text-neutral-500 text-[11px]">
@@ -232,7 +279,12 @@ export const SwipeCardPicker: React.FC<SwipeCardPickerProps> = ({
 
           {/* PRODUCT TITLE & IDENTIFIER */}
           <div className="text-left px-0.5">
-            <h3 className="text-[15px] font-semibold text-neutral-900 leading-snug line-clamp-2 mb-1">
+            {currentItem.componentRole && currentItem.componentRole !== 'STANDALONE' && (
+              <span className="mb-1 inline-flex rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-700">
+                {currentItem.componentRole.replaceAll('_', ' ')}
+              </span>
+            )}
+            <h3 className="text-[16px] font-semibold text-neutral-900 leading-snug line-clamp-2 mb-1">
               {currentItem.name}
             </h3>
 
@@ -247,7 +299,26 @@ export const SwipeCardPicker: React.FC<SwipeCardPickerProps> = ({
             {currentItem.isWeight && (
               <div className="mt-1.5 flex items-center gap-1.5 text-xs text-amber-800 bg-amber-50 border border-amber-200/80 px-2 py-1 rounded-md">
                 <Scale className="w-3.5 h-3.5 text-amber-700 shrink-0" />
-                <span>Weigh Item ({currentItem.expectedWeight || 1.0}kg expected)</span>
+                <span>
+                  Weigh item
+                  {currentItem.expectedWeight
+                    ? ` · expected ${currentItem.expectedWeight}${currentItem.weightUnit || 'kg'}`
+                    : ''}
+                </span>
+              </div>
+            )}
+            {currentItem.substitutionState && currentItem.substitutionState !== 'NONE' && (
+              <div className="mt-1.5 rounded-md border border-sky-200 bg-sky-50 px-2 py-1 text-xs font-medium text-sky-800">
+                Substitute: {currentItem.substitutionState.replaceAll('_', ' ').toLowerCase()}
+              </div>
+            )}
+            {currentItem.syncState && currentItem.syncState !== 'SYNCED' && (
+              <div className={`mt-1.5 rounded-md border px-2 py-1 text-xs font-medium ${
+                currentItem.syncState === 'FAILED'
+                  ? 'border-rose-200 bg-rose-50 text-rose-800'
+                  : 'border-amber-200 bg-amber-50 text-amber-800'
+              }`}>
+                {currentItem.syncState === 'FAILED' ? 'Sync failed — retry from the order' : 'Queued to sync'}
               </div>
             )}
           </div>
@@ -292,11 +363,11 @@ export const SwipeCardPicker: React.FC<SwipeCardPickerProps> = ({
       </div>
 
       {/* ACTION BUTTONS: Calm, Modern, Clean Lines */}
-      <div className="w-full flex items-center gap-2 mt-3 px-1">
+      <div className="sticky bottom-2 z-20 mt-3 flex w-full items-center gap-2 rounded-2xl border border-neutral-200 bg-white/95 p-2 shadow-lg backdrop-blur">
         {/* Issue / Substitute Button */}
         <button
           onClick={() => triggerUnavailable(currentItem)}
-          className="flex-1 py-2 px-3 rounded-lg bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 text-neutral-700 font-medium text-xs flex items-center justify-center gap-1.5 transition active:scale-[0.98]"
+          className="min-h-12 flex-1 rounded-xl border border-neutral-200 bg-neutral-50 px-3 text-xs font-semibold text-neutral-700 transition active:scale-[0.98] flex items-center justify-center gap-1.5"
           title="Item Unavailable or Substitute"
         >
           <X className="w-3.5 h-3.5 text-neutral-500" />
@@ -307,7 +378,7 @@ export const SwipeCardPicker: React.FC<SwipeCardPickerProps> = ({
         {onOpenBarcodeScan && (
           <button
             onClick={onOpenBarcodeScan}
-            className="p-2 rounded-lg bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 text-neutral-600 flex items-center justify-center transition active:scale-[0.98]"
+            className="h-12 w-12 shrink-0 rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-600 flex items-center justify-center transition active:scale-[0.98]"
             title="Scan with Camera"
           >
             <Camera className="w-4 h-4 text-neutral-500" />
@@ -317,7 +388,7 @@ export const SwipeCardPicker: React.FC<SwipeCardPickerProps> = ({
         {/* AI Vision Photo button */}
         <button
           onClick={onOpenPhotoPick}
-          className="p-2 rounded-lg bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 text-neutral-600 flex items-center justify-center transition active:scale-[0.98]"
+          className="h-12 w-12 shrink-0 rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-600 flex items-center justify-center transition active:scale-[0.98]"
           title="Photo Recognition"
         >
           <Sparkles className="w-4 h-4 text-indigo-500" />
@@ -326,7 +397,7 @@ export const SwipeCardPicker: React.FC<SwipeCardPickerProps> = ({
         {/* Primary Pick Button */}
         <button
           onClick={() => triggerPickUnit(currentItem)}
-          className="flex-[1.5] py-2 px-4 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-xs flex items-center justify-center gap-1.5 shadow-xs transition active:scale-[0.98]"
+          className="min-h-12 flex-[1.5] rounded-xl bg-emerald-600 px-4 text-sm font-semibold text-white shadow-sm transition active:scale-[0.98] flex items-center justify-center gap-1.5"
           title={isMultiQty ? `Declare Unit ${currentPicked + 1}` : 'Confirm Pick'}
         >
           <Check className="w-3.5 h-3.5 stroke-[2.5]" />
@@ -337,12 +408,12 @@ export const SwipeCardPicker: React.FC<SwipeCardPickerProps> = ({
       </div>
 
       {/* Quick shortcut to declare all remaining */}
-      {isMultiQty && (
+      {isMultiQty && quickAllAllowed && (
         <button
           onClick={() => onPickUnit(currentItem, true)}
-          className="mt-2 text-[11px] text-neutral-400 hover:text-neutral-700 transition"
+          className="mt-2 min-h-12 w-full rounded-xl border border-emerald-200 bg-emerald-50 px-4 text-sm font-semibold text-emerald-800 transition active:scale-[0.98]"
         >
-          Pick all {totalQty} at once
+          Pick all {remainingQty} remaining units
         </button>
       )}
     </div>
