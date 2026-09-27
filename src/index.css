@@ -5,11 +5,71 @@
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
-/* Crisp rendering and typography */
+/*
+ * LTx visual system
+ * Keep the picker operational and restrained: one strong brand colour,
+ * quiet surfaces, consistent radii, and status colours reserved for meaning.
+ */
+:root {
+  --ltx-brand: #0d3944;
+  --ltx-brand-strong: #082b33;
+  --ltx-brand-soft: #e8f0f2;
+  --ltx-ink: #172126;
+  --ltx-muted: #66747b;
+  --ltx-border: #dce3e6;
+  --ltx-surface: #ffffff;
+  --ltx-canvas: #f5f7f7;
+  --ltx-radius: 16px;
+  --ltx-radius-sm: 12px;
+}
+
 html {
   font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  background: var(--ltx-canvas);
+  color: var(--ltx-ink);
+}
+
+.ltx-display {
+  font-family: 'Funnel Display', var(--font-sans);
+  letter-spacing: -0.025em;
+}
+
+.ltx-card {
+  background: var(--ltx-surface);
+  border: 1px solid var(--ltx-border);
+  border-radius: var(--ltx-radius);
+  box-shadow: 0 1px 2px rgb(13 57 68 / 0.04);
+}
+
+.ltx-card-quiet {
+  background: #fbfcfc;
+  border: 1px solid #e7ecee;
+  border-radius: var(--ltx-radius-sm);
+}
+
+.ltx-primary {
+  background: var(--ltx-brand);
+  color: #fff;
+}
+
+.ltx-primary:hover {
+  background: var(--ltx-brand-strong);
+}
+
+.ltx-secondary {
+  background: #f4f6f6;
+  border: 1px solid #e1e6e8;
+  color: #314047;
+}
+
+.ltx-focus:focus-visible {
+  outline: 3px solid rgb(13 57 68 / 0.22);
+  outline-offset: 2px;
 }
 
 /* Accessibility: Reduced Motion */
@@ -24,24 +84,50 @@ html {
   }
 }
 
-/* Accessibility: Mobile Touch Targets */
+/* Touch screens: QuickPick's primary controls should be thumb-friendly. */
 @media (pointer: coarse) {
   button,
   [role="button"],
   input,
-  select {
-    min-height: 44px;
+  select,
+  summary {
+    min-height: 48px;
   }
 }
 
-/* System Dark Mode Baseline */
+/* System dark mode: retain LTx petrol rather than generic blue/black. */
 @media (prefers-color-scheme: dark) {
   :root {
     color-scheme: dark;
+    --ltx-brand: #0f5363;
+    --ltx-brand-strong: #0d4654;
+    --ltx-brand-soft: #143944;
+    --ltx-ink: #f2f6f7;
+    --ltx-muted: #a7b4b9;
+    --ltx-border: #2a3e45;
+    --ltx-surface: #15262c;
+    --ltx-canvas: #0d1d22;
   }
 
   body {
-    background-color: #0f172a;
-    color: #f8fafc;
+    background: var(--ltx-canvas);
+    color: var(--ltx-ink);
+  }
+
+  .ltx-card {
+    background: var(--ltx-surface);
+    border-color: var(--ltx-border);
+    box-shadow: none;
+  }
+
+  .ltx-card-quiet {
+    background: #112228;
+    border-color: #263b42;
+  }
+
+  .ltx-secondary {
+    background: #1c3036;
+    border-color: #31484f;
+    color: #e7eff1;
   }
 }
