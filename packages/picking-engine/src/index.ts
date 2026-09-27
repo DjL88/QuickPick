@@ -93,7 +93,7 @@ export class PickingEngine {
         if (grp.id === item.groupId || getGroupLineIds(grp).includes(item._id)) {
           changedGroupIds.push(grp.id);
           const grpItems = newItems.filter(
-            (it) => it.groupId === grp.id || grp.itemIds.includes(it._id)
+            (it) => it.groupId === grp.id || getGroupLineIds(grp).includes(it._id)
           );
           const pickableGrpItems = grpItems.filter(isPickingLinePickable);
           const pickedCount = pickableGrpItems.filter((it) => it.status === 'PICKED').length;
