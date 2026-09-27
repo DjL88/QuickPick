@@ -45,7 +45,8 @@ import {
   RemovalReason,
   UpdateOrderItemAction,
   AuditLogEntry,
-  getPickAllBlockReasons
+  getPickAllBlockReasons,
+  getPickAllBlockReasonsForLine
 } from '@contracts/index.js';
 import { sounds } from './lib/audio.js';
 import { offlineQueue } from './lib/offlineQueue.js';
@@ -67,6 +68,7 @@ import { TeamPresenceBar } from './components/TeamPresenceBar.js';
 import { DavidVictorModal } from './components/DavidVictorModal.js';
 import { ConsumerOrderingApp } from './components/commerce/ConsumerOrderingApp.js';
 import { buildGroupPickAllPlan } from './lib/pickAllGuard.js';
+import { HoldToConfirmButton } from './components/HoldToConfirmButton.js';
 
 export default function App() {
   const isOnline = useOnlineStatus();
@@ -138,6 +140,13 @@ export default function App() {
   const [orders, setOrders] = useState<PickingOrder[]>([]);
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [isLoadingOrders, setIsLoadingOrders] = useState(false);
+  const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
+  const [lastLocalUnitUndo, setLastLocalUnitUndo] = useState<{
+    orderId: string;
+    itemId: string;
+    previousPickedQuantity: number;
+    expectedPickedQuantity: number;
+  } | null>(null);
 
   // Modals & Drawers
   const [showCameraScanner, setShowCameraScanner] = useState(false);
@@ -306,13 +315,23 @@ export default function App() {
           };
         })
       );
+      setLastLocalUnitUndo({
+        orderId: activeOrder._id,
+        itemId: item._id,
+        previousPickedQuantity: currentPicked,
+        expectedPickedQuantity: nextPicked,
+      });
 
       const remaining = totalQty - nextPicked;
       showToast(`Scanned unit ${nextPicked}/${totalQty} for ${item.name} (${remaining} remaining)`, 'info');
       return;
     }
 
-    // All units declared!
+    // All units declared: from here a provider mutation may be sent, so any
+    // purely-local undo token for this line is no longer valid.
+    setLastLocalUnitUndo((token) =>
+      token?.orderId === activeOrder._id && token.itemId === item._id ? null : token
+    );
     sounds.playPickSuccess();
     if (typeof navigator !== 'undefined' && navigator.vibrate) {
       navigator.vibrate([30, 40, 50]);
@@ -380,7 +399,11 @@ export default function App() {
 
     const latestOrder =
       orders.find((order) => order._id === activeOrder._id) || activeOrder;
-    const latestPlan = buildGroupPickAllPlan(group, latestOrder.items);
+    const latestPlan = buildGroupPickAllPlan(
+      group,
+      latestOrder.items,
+      latestOrder.groups || [group]
+    );
     const requestedIds = new Set(safeItems.map((item) => item._id));
     const latestSafeItems = latestOrder.items.filter(
       (item) =>
@@ -388,7 +411,10 @@ export default function App() {
         latestPlan.eligibleItemIds.includes(item._id)
     );
 
-    if (latestSafeItems.length !== safeItems.length) {
+    if (
+      latestPlan.blockedItems.length > 0 ||
+      latestSafeItems.length !== safeItems.length
+    ) {
       sounds.playErrorBuzz();
       showToast('Order changed while confirming. Review the bundle and hold again.', 'info');
       return;
@@ -403,6 +429,52 @@ export default function App() {
       await handleDirectPick(item, undefined, true);
     }
     showToast(`Picked ${latestSafeItems.length} items in ${group.name}`, 'success');
+  };
+
+  const openAuditTrail = async () => {
+    if (!activeOrder) return;
+    try {
+      const res = await fetch(
+        `/api/audit-logs?orderId=${encodeURIComponent(activeOrder._id)}`
+      );
+      if (res.ok) {
+        const data = await res.json();
+        setAuditLogs(Array.isArray(data.logs) ? data.logs : []);
+      }
+    } catch {
+      setAuditLogs([]);
+    }
+    setShowAuditDrawer(true);
+  };
+
+  const undoLastLocalUnit = () => {
+    if (!lastLocalUnitUndo) return;
+    setOrders((prev) =>
+      prev.map((order) => {
+        if (order._id !== lastLocalUnitUndo.orderId) return order;
+        const current = order.items.find((item) => item._id === lastLocalUnitUndo.itemId);
+        if (
+          !current ||
+          current.status !== 'PENDING' ||
+          (current.pickedQuantity || 0) !== lastLocalUnitUndo.expectedPickedQuantity
+        ) {
+          return order;
+        }
+        return {
+          ...order,
+          items: order.items.map((item) =>
+            item._id === lastLocalUnitUndo.itemId
+              ? {
+                  ...item,
+                  pickedQuantity: lastLocalUnitUndo.previousPickedQuantity,
+                }
+              : item
+          ),
+        };
+      })
+    );
+    showToast('Last local unit declaration undone', 'info');
+    setLastLocalUnitUndo(null);
   };
 
   // Substitute Item
@@ -1267,15 +1339,29 @@ export default function App() {
                               </button>
 
                               {/* Declare All button for multi-qty (guarded) */}
-                              {isMulti && (
-                                <button
-                                  onClick={() => handleDirectPick(item, undefined, true)}
-                                  className="px-2 py-1 rounded-md bg-neutral-100 hover:bg-neutral-200 text-neutral-700 font-medium text-[11px] border border-neutral-200 transition"
-                                  title="Declare all units"
-                                >
-                                  All
-                                </button>
-                              )}
+                              {isMulti && (() => {
+                                const reasons = getPickAllBlockReasonsForLine(
+                                  item,
+                                  activeOrder.groups || []
+                                );
+                                return reasons.length === 0 ? (
+                                  <HoldToConfirmButton
+                                    guardKey={JSON.stringify({
+                                      id: item._id,
+                                      pickedQuantity: item.pickedQuantity || 0,
+                                      quantity: item.quantity,
+                                      status: item.status,
+                                      syncState: item.syncState || null,
+                                      reasons,
+                                    })}
+                                    holdMs={650}
+                                    onConfirm={() => handleDirectPick(item, undefined, true)}
+                                    className="min-h-[40px] px-2.5 rounded-xl ltx-secondary text-[11px] font-semibold"
+                                    label="Hold · All"
+                                    title="Hold to declare all remaining units"
+                                  />
+                                ) : null;
+                              })()}
                             </div>
                           )}
                         </div>
@@ -1394,7 +1480,7 @@ export default function App() {
       {/* Order Audit Trail Drawer */}
       {showAuditDrawer && activeOrder && (
         <AuditTrailDrawer
-          logs={[]}
+          logs={auditLogs}
           orderId={activeOrder._id}
           onClose={() => setShowAuditDrawer(false)}
         />
