@@ -4,9 +4,14 @@
  */
 
 import { PickingOrder, ItemUnavailableAction } from '../../contracts/src/index.js';
+import { createQP02GroupedOrder } from './qp02-fixture.js';
+
+export { createQP02GroupedOrder };
 
 export function createSampleGroceryOrders(locationId: string = 'loc_london_flagship'): PickingOrder[] {
   const now = Date.now();
+
+  const groupedOrder = createQP02GroupedOrder(locationId);
 
   const order1: PickingOrder = {
     _id: 'deliv_ord_' + Math.random().toString(36).substring(2, 9),
@@ -252,5 +257,5 @@ export function createSampleGroceryOrders(locationId: string = 'loc_london_flags
     ],
   };
 
-  return [order1, order2, order3];
+  return [groupedOrder, order1, order2, order3];
 }

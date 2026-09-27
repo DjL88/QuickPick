@@ -5,9 +5,43 @@
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
-/* Crisp rendering and smooth scrollbars */
+/* Crisp rendering and typography */
 html {
   font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* Accessibility: Reduced Motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Accessibility: Mobile Touch Targets */
+@media (pointer: coarse) {
+  button,
+  [role="button"],
+  input,
+  select {
+    min-height: 44px;
+  }
+}
+
+/* System Dark Mode Baseline */
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+  }
+
+  body {
+    background-color: #0f172a;
+    color: #f8fafc;
+  }
 }

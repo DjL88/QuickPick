@@ -13,6 +13,7 @@ import { altie } from './altie.js';
 import {
   PickingOrder,
   PickingItem,
+  PickingGroup,
   OrderLifecycleWebhook,
   UpdateOrderItemAction,
   PickerUser
@@ -787,6 +788,277 @@ export function createApp(options: AppServerOptions = {}) {
 
   app.post('/api/david-victor/order', handleDavidVictorOrder);
   app.post('/picking/order/david-victor', handleDavidVictorOrder);
+
+  // -------------------------------------------------------------
+  // 3. DELIVERECT COMMERCE API (Deliveroo & Uber Eats Ordering Engine)
+  // -------------------------------------------------------------
+
+  /**
+   * POST /api/commerce/order
+   * Places an order from the Deliveroo / Uber Eats consumer ordering app via Deliverect Commerce API.
+   * Maps cart items, bundles, meal deals, modifiers, dietary notes, and customer preferences
+   * into the unified Deliverect Generic Picking & Commerce Order model.
+   */
+  app.post('/api/commerce/order', (req: Request, res: Response) => {
+    try {
+      const payload = req.body || {};
+      const {
+        storeId = 'store_david_victor',
+        storeName = 'David Victor Artisanal Deli & Bakery',
+        cartItems = [],
+        customer = {},
+        orderType = 'DELIVERY',
+        deliveryAddress = '142 Oxford St, London W1D 1LU',
+        courierNotes = '',
+        tipAmount = 0,
+        subtotal = 0,
+        total = 0,
+      } = payload;
+
+      const orderId = 'ord_' + Math.random().toString(36).substring(2, 9);
+      const channelDisplayNum = Math.floor(1000 + Math.random() * 9000);
+      const channelOrderDisplayId = `#ORD-${channelDisplayNum}`;
+      const channelOrderId = `COMMERCE-${Date.now().toString().slice(-6)}`;
+      const now = Date.now();
+      const pickupTime = new Date(now + 25 * 60 * 1000).toISOString();
+      const deliveryTime = new Date(now + 40 * 60 * 1000).toISOString();
+
+      const parsedItems: PickingItem[] = [];
+      const parsedGroups: PickingGroup[] = [];
+
+      cartItems.forEach((cartItem: any, itemIdx: number) => {
+        const itemLineId = `line_${orderId}_${itemIdx + 1}`;
+
+        if (cartItem.bundleSelections && cartItem.bundleSelections.length > 0) {
+          // Bundle / Meal Deal Grouping (QP-02 / QP-04)
+          const groupId = `grp_${orderId}_${itemIdx + 1}`;
+          const groupItemIds: string[] = [];
+
+          // 1. Parent Bundle Item
+          const parentItem: PickingItem = {
+            _id: itemLineId,
+            plu: String(cartItem.plu || `BUNDLE-${itemIdx + 1}`),
+            name: String(cartItem.name),
+            quantity: Number(cartItem.quantity || 1),
+            price: Math.round((Number(cartItem.unitPrice) || 0) * 100),
+            channelItemId: `ch_${itemLineId}`,
+            gtin: [String(cartItem.plu || '5060' + itemIdx)],
+            department: cartItem.department || 'Meal Deals & Combos',
+            aisle: cartItem.aisle || 'Aisle 1',
+            shelf: cartItem.shelf || 'Bay 1',
+            temperature: cartItem.temperature || 'AMBIENT',
+            imageUrl: cartItem.imageUrl,
+            status: 'PENDING',
+            groupId,
+            componentRole: 'COMPONENT',
+            itemUnavailableActions: ['ITEM_SUBSTITUTION', 'ITEM_REMOVE'],
+          };
+          parsedItems.push(parentItem);
+          groupItemIds.push(parentItem._id);
+
+          // 2. Child Components & Modifiers
+          cartItem.bundleSelections.forEach((bundleSel: any, bIdx: number) => {
+            const childId = `child_${itemLineId}_${bIdx + 1}`;
+            const childItem: PickingItem = {
+              _id: childId,
+              plu: String(bundleSel.plu || `CHILD-${bIdx + 1}`),
+              name: String(bundleSel.name),
+              quantity: Number(cartItem.quantity || 1),
+              price: Math.round((Number(bundleSel.priceDelta) || 0) * 100),
+              channelItemId: `ch_${childId}`,
+              gtin: [String(bundleSel.plu || '5060' + bIdx)],
+              department: cartItem.department || 'Kitchen Stations',
+              aisle: cartItem.aisle || 'Aisle 1',
+              shelf: cartItem.shelf || 'Bay 2',
+              temperature: cartItem.temperature || 'AMBIENT',
+              imageUrl: bundleSel.imageUrl || cartItem.imageUrl,
+              status: 'PENDING',
+              groupId,
+              componentRole: bundleSel.role || 'COMPONENT',
+              ageRestricted: Boolean(bundleSel.ageRestricted),
+              minimumAge: bundleSel.minimumAge || 18,
+              itemUnavailableActions: ['ITEM_SUBSTITUTION', 'ITEM_REMOVE'],
+            };
+            parsedItems.push(childItem);
+            groupItemIds.push(childItem._id);
+          });
+
+          // 3. Special instruction as customisation line if present
+          if (cartItem.specialInstructions && cartItem.specialInstructions.trim()) {
+            const noteId = `note_${itemLineId}`;
+            const noteItem: PickingItem = {
+              _id: noteId,
+              plu: 'NOTE-INST',
+              name: `Special Request: "${cartItem.specialInstructions.trim()}"`,
+              quantity: 1,
+              price: 0,
+              channelItemId: `ch_${noteId}`,
+              department: 'Special Instructions',
+              temperature: 'AMBIENT',
+              status: 'PENDING',
+              groupId,
+              componentRole: 'CUSTOMISATION',
+              isTextInstruction: true,
+              itemUnavailableActions: ['ITEM_AMENDMENT'],
+            };
+            parsedItems.push(noteItem);
+            groupItemIds.push(noteItem._id);
+          }
+
+          parsedGroups.push({
+            id: groupId,
+            name: cartItem.name,
+            type: 'MEAL_DEAL',
+            itemIds: groupItemIds,
+            pickAllPolicy: 'SAFE_CHILDREN_ONLY',
+            parentItemId: itemLineId,
+            totalCount: groupItemIds.length,
+            pickedCount: 0,
+          });
+        } else {
+          // Standard Single Item with Modifiers
+          const singleItem: PickingItem = {
+            _id: itemLineId,
+            plu: String(cartItem.plu || `PLU-${itemIdx + 1}`),
+            name: String(cartItem.name),
+            quantity: Number(cartItem.quantity || 1),
+            price: Math.round((Number(cartItem.unitPrice) || 0) * 100),
+            channelItemId: `ch_${itemLineId}`,
+            gtin: [String(cartItem.plu || '5060' + itemIdx)],
+            modifiers: Array.isArray(cartItem.selectedOptions)
+              ? cartItem.selectedOptions.map((opt: any) => ({
+                  name: `${opt.groupName}: ${opt.optionName}`,
+                  price: Math.round((Number(opt.price) || 0) * 100),
+                  plu: opt.optionId,
+                }))
+              : [],
+            department: cartItem.department || 'Store Inventory',
+            aisle: cartItem.aisle,
+            shelf: cartItem.shelf,
+            temperature: cartItem.temperature || 'AMBIENT',
+            imageUrl: cartItem.imageUrl,
+            status: 'PENDING',
+            isWeight: Boolean(cartItem.isWeight),
+            expectedWeight: cartItem.expectedWeight,
+            weightUnit: cartItem.weightUnit || 'kg',
+            ageRestricted: Boolean(cartItem.ageRestricted),
+            minimumAge: cartItem.minimumAge || 18,
+            notes: cartItem.specialInstructions,
+            itemUnavailableActions: ['ITEM_SUBSTITUTION', 'ITEM_REMOVE', 'ITEM_AMENDMENT'],
+          };
+          parsedItems.push(singleItem);
+        }
+      });
+
+      const order: PickingOrder = {
+        _id: orderId,
+        location: 'loc_london_flagship',
+        channelOrderId,
+        channelOrderDisplayId,
+        pickupTime,
+        deliveryTime,
+        orderType: (orderType as any) || 'DELIVERY',
+        customer: {
+          name: customer.name || 'Alex Morgan',
+          phone: customer.phone || '+44 7911 123456',
+          email: customer.email || 'alex.morgan@deliveroo-order.com',
+          address: deliveryAddress,
+        },
+        note: courierNotes ? `Courier Note: ${courierNotes}` : `Deliverect Commerce Order for ${storeName}`,
+        items: parsedItems,
+        groups: parsedGroups.length > 0 ? parsedGroups : undefined,
+        status: 'SCHEDULED',
+        pickerStatus: 'NOT_STARTED',
+        receivedAt: new Date(now).toISOString(),
+        dueAt: pickupTime,
+        slaStatus: 'ON_TIME',
+        metadata: {
+          channel: 'DELIVERECT_COMMERCE',
+          storeId,
+          storeName,
+          deliveryAddress,
+          courierNotes,
+          tipAmount,
+          subtotal,
+          total,
+          estimatedMinutes: 25,
+        },
+        rawPayload: payload,
+      };
+
+      // Altie route optimization (Ambient -> Chilled -> Frozen)
+      const sequenced = altie.optimizePickingRoute(order.items);
+      order.items = sequenced.sortedItems;
+
+      globalStore.saveOrder(order, payload);
+      globalStore.addAuditLog(order._id, 'Deliverect Commerce API', `Placed by ${order.customer.name} for ${storeName}`, {
+        storeName,
+        total: `£${(total || subtotal || 0).toFixed(2)}`,
+        itemCount: order.items.length,
+      });
+
+      res.status(200).json({
+        status: 'success',
+        orderId: order._id,
+        channelOrderDisplayId: order.channelOrderDisplayId,
+        channelOrderId: order.channelOrderId,
+        estimatedMinutes: 25,
+        dueAt: order.dueAt,
+        message: 'Order created via Deliverect Commerce API and sent to store picker queue',
+        order,
+      });
+    } catch (err: any) {
+      console.error('[Commerce API] Failed to create order:', err);
+      res.status(500).json({ error: 'Failed to process Deliverect Commerce order', details: err.message });
+    }
+  });
+
+  /**
+   * GET /api/commerce/orders/:orderId/track
+   * Live order status tracker for Deliveroo / Uber Eats consumer frontend.
+   */
+  app.get('/api/commerce/orders/:orderId/track', (req: Request, res: Response) => {
+    const { orderId } = req.params;
+    const order = globalStore.getOrder(orderId);
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    const totalItems = order.items.length;
+    const pickedItems = order.items.filter((i) => i.status === 'PICKED').length;
+    const progressPercent = totalItems > 0 ? Math.round((pickedItems / totalItems) * 100) : 0;
+
+    let stage: 'ORDER_PLACED' | 'STORE_CONFIRMED' | 'PICKING' | 'PACKED' | 'DISPATCHED' | 'DELIVERED' = 'ORDER_PLACED';
+    let stageTitle = 'Order Received';
+    let stageDescription = 'The store has received your order via Deliverect Commerce API and is getting ready.';
+
+    if (order.pickerStatus === 'IN_PROGRESS') {
+      stage = 'PICKING';
+      stageTitle = 'Picker Gathering Items';
+      stageDescription = `${order.assignedPickerName || 'A store picker'} is hand-selecting your items (${pickedItems}/${totalItems} picked).`;
+    } else if (order.pickerStatus === 'COMPLETED') {
+      stage = 'PACKED';
+      stageTitle = 'Order Packed & Ready';
+      stageDescription = 'Your order is securely packed in thermal tote bags waiting for courier pickup.';
+    }
+
+    res.json({
+      orderId: order._id,
+      channelOrderDisplayId: order.channelOrderDisplayId,
+      status: order.status,
+      pickerStatus: order.pickerStatus,
+      assignedPickerName: order.assignedPickerName,
+      stage,
+      stageTitle,
+      stageDescription,
+      progressPercent,
+      totalItems,
+      pickedItems,
+      dueAt: order.dueAt,
+      metadata: order.metadata,
+      items: order.items,
+    });
+  });
 
   // Simulator helper: Emit simulated webhook
   app.post('/api/simulator/emit-webhook', (req: Request, res: Response) => {

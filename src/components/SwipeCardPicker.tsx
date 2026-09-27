@@ -1,10 +1,11 @@
 /**
  * @file src/components/SwipeCardPicker.tsx
- * LTx Picker - Clean, modern swipe card picker.
- * - Calmer typography with DM Sans
- * - Clean lines & subtle hairline borders
- * - Crisp product photography
- * - High-clarity, decluttered quantity tracking
+ * LTx QuickPick - Mobile-First Touch Swipe Card Picker.
+ * - QP-02 / QP-04 Bundle & Group support (deal name, role, bundle progress)
+ * - Safe Pick All validation via authoritative getPickAllBlockReasons
+ * - Honest data presentation (no fake aisles, bays, or weights)
+ * - Touch-optimized ergonomics (min 48px touch targets, sticky bottom controls)
+ * - Dark mode and accessibility support
  */
 
 import React, { useState, useRef } from 'react';
@@ -17,12 +18,16 @@ import {
   Tag,
   ShieldAlert,
   Camera,
+  Layers,
+  Info,
+  AlertCircle,
 } from 'lucide-react';
-import { PickingItem } from '@contracts/index.js';
+import { PickingItem, PickingGroup, getPickAllBlockReasons } from '@contracts/index.js';
 import { sounds } from '../lib/audio.js';
 
 interface SwipeCardPickerProps {
   items: PickingItem[];
+  groups?: PickingGroup[];
   onPickUnit: (item: PickingItem, pickAll?: boolean) => void;
   onUnavailable: (item: PickingItem) => void;
   onWeightRequest: (item: PickingItem) => void;
@@ -32,13 +37,16 @@ interface SwipeCardPickerProps {
 
 export const SwipeCardPicker: React.FC<SwipeCardPickerProps> = ({
   items,
+  groups,
   onPickUnit,
   onUnavailable,
   onWeightRequest,
   onOpenPhotoPick,
   onOpenBarcodeScan,
 }) => {
-  const pendingItems = items.filter((i) => i.status === 'PENDING');
+  // Exclude non-physical text instructions from interactive card deck (they are visible in group rail/notes)
+  const pickableItems = items.filter((i) => !i.isTextInstruction);
+  const pendingItems = pickableItems.filter((i) => i.status === 'PENDING');
   const currentItem = pendingItems[0];
 
   const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -48,25 +56,43 @@ export const SwipeCardPicker: React.FC<SwipeCardPickerProps> = ({
 
   if (!currentItem) {
     return (
-      <div className="py-12 px-6 text-center bg-white rounded-xl border border-neutral-200/80 flex flex-col items-center shadow-xs max-w-sm mx-auto">
-        <div className="w-12 h-12 rounded-lg bg-emerald-50 border border-emerald-200/80 flex items-center justify-center mb-3">
-          <Check className="w-6 h-6 text-emerald-600 stroke-[2.5]" />
+      <div className="py-12 px-6 text-center bg-white dark:bg-neutral-900 rounded-xl border border-neutral-200/80 dark:border-neutral-800 flex flex-col items-center shadow-xs max-w-sm mx-auto">
+        <div className="w-12 h-12 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200/80 dark:border-emerald-800 flex items-center justify-center mb-3">
+          <Check className="w-6 h-6 text-emerald-600 dark:text-emerald-400 stroke-[2.5]" />
         </div>
-        <h3 className="text-base font-semibold text-neutral-900 mb-1">All Items Picked</h3>
-        <p className="text-xs text-neutral-500 max-w-xs mb-4">
-          All order items have been verified. Tap Finish to complete and dispatch.
+        <h3 className="text-base font-semibold text-neutral-900 dark:text-neutral-100 mb-1">All Items Picked</h3>
+        <p className="text-xs text-neutral-500 dark:text-neutral-400 max-w-xs mb-4">
+          All order items and bundle components have been declared. Ready to review and dispatch.
         </p>
-        <span className="text-xs font-medium text-emerald-700 px-3 py-1 bg-emerald-50 border border-emerald-200 rounded-lg">
+        <span className="text-xs font-medium text-emerald-700 dark:text-emerald-300 px-3 py-1 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 rounded-lg">
           Ready for Finalize
         </span>
       </div>
     );
   }
 
+  // Active bundle/group context
+  const activeGroup = groups?.find(
+    (g) => g.id === currentItem.groupId || g.itemIds?.includes(currentItem._id)
+  );
+
+  let groupProgressText = '';
+  if (activeGroup) {
+    const groupItems = pickableItems.filter(
+      (i) => i.groupId === activeGroup.id || activeGroup.itemIds?.includes(i._id)
+    );
+    const groupPicked = groupItems.filter((i) => i.status === 'PICKED').length;
+    groupProgressText = `${groupPicked}/${groupItems.length}`;
+  }
+
   const currentPicked = currentItem.pickedQuantity || 0;
   const totalQty = currentItem.quantity || 1;
   const isMultiQty = totalQty > 1;
   const remainingQty = totalQty - currentPicked;
+
+  // Authoritative safety check for Pick All
+  const blockReasons = getPickAllBlockReasons(currentItem, activeGroup);
+  const isSafeForPickAll = blockReasons.length === 0;
 
   const handleTouchStart = (e: React.TouchEvent | React.MouseEvent) => {
     setIsDragging(true);
@@ -89,9 +115,9 @@ export const SwipeCardPicker: React.FC<SwipeCardPickerProps> = ({
     if (!isDragging) return;
     setIsDragging(false);
 
-    if (dragOffset.x > 85) {
+    if (dragOffset.x > 80) {
       triggerPickUnit(currentItem);
-    } else if (dragOffset.x < -85) {
+    } else if (dragOffset.x < -80) {
       triggerUnavailable(currentItem);
     }
 
@@ -116,30 +142,44 @@ export const SwipeCardPicker: React.FC<SwipeCardPickerProps> = ({
   };
 
   const rotation = dragOffset.x * 0.05;
-  const pickOpacity = Math.min(1, Math.max(0, dragOffset.x / 65));
-  const rejectOpacity = Math.min(1, Math.max(0, -dragOffset.x / 65));
+  const pickOpacity = Math.min(1, Math.max(0, dragOffset.x / 60));
+  const rejectOpacity = Math.min(1, Math.max(0, -dragOffset.x / 60));
+
+  // Location honest presentation
+  const locationDisplay = currentItem.aisle
+    ? `${currentItem.aisle}${currentItem.shelf ? ` · ${currentItem.shelf}` : ''}`
+    : 'Location not set';
 
   return (
     <div className="relative w-full max-w-sm mx-auto flex flex-col items-center">
-      {/* Top Item Progress Line */}
+      {/* Top Item / Bundle Progress Line */}
       <div className="w-full flex items-center justify-between px-1 mb-2 text-xs">
-        <span className="text-neutral-500 font-medium">
-          Item <span className="font-mono text-neutral-900 font-semibold">{items.length - pendingItems.length + 1}</span> of {items.length}
-        </span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-neutral-500 dark:text-neutral-400 font-medium">
+            Item <span className="font-mono text-neutral-900 dark:text-neutral-100 font-semibold">{pickableItems.length - pendingItems.length + 1}</span> of {pickableItems.length}
+          </span>
+          {activeGroup && (
+            <span className="text-[10px] font-medium px-1.5 py-0.2 rounded bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 flex items-center gap-1">
+              <Layers className="w-3 h-3" />
+              <span>Bundle ({groupProgressText})</span>
+            </span>
+          )}
+        </div>
+
         {isMultiQty ? (
-          <span className="text-emerald-700 bg-emerald-50 border border-emerald-200/80 px-2 py-0.5 rounded-md text-[11px] font-medium">
+          <span className="text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200/80 dark:border-emerald-800 px-2 py-0.5 rounded-md text-[11px] font-medium">
             {remainingQty} more needed
           </span>
         ) : (
-          <span className="text-neutral-400 text-[11px]">Swipe or tap to pick</span>
+          <span className="text-neutral-400 dark:text-neutral-500 text-[11px]">Swipe or tap to pick</span>
         )}
       </div>
 
       {/* Main Interactive Card Stack */}
-      <div className="relative w-full h-[435px] select-none touch-none">
+      <div className="relative w-full h-[450px] select-none touch-none">
         {/* Next Card Preview */}
         {pendingItems[1] && (
-          <div className="absolute inset-0 rounded-xl bg-neutral-100/80 border border-neutral-200/80 transform scale-[0.96] translate-y-2.5 opacity-70 pointer-events-none" />
+          <div className="absolute inset-0 rounded-xl bg-neutral-100/90 dark:bg-neutral-800/60 border border-neutral-200/80 dark:border-neutral-700 transform scale-[0.96] translate-y-2.5 opacity-70 pointer-events-none" />
         )}
 
         {/* Current Active Item Card */}
@@ -155,19 +195,19 @@ export const SwipeCardPicker: React.FC<SwipeCardPickerProps> = ({
             transform: `translate3d(${dragOffset.x}px, ${dragOffset.y}px, 0) rotate(${rotation}deg)`,
             transition: isDragging ? 'none' : 'transform 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
           }}
-          className={`absolute inset-0 rounded-xl bg-white border shadow-sm p-4 flex flex-col justify-between overflow-hidden cursor-grab active:cursor-grabbing transition-colors ${
+          className={`absolute inset-0 rounded-xl bg-white dark:bg-neutral-900 border shadow-sm p-4 flex flex-col justify-between overflow-hidden cursor-grab active:cursor-grabbing transition-colors ${
             unitFlash
               ? 'border-emerald-500 ring-2 ring-emerald-500/20'
-              : 'border-neutral-200/90'
+              : 'border-neutral-200/90 dark:border-neutral-800'
           }`}
         >
           {/* Swipe Decision Overlays */}
           {pickOpacity > 0 && (
             <div
               style={{ opacity: pickOpacity }}
-              className="absolute top-4 left-4 z-30 px-2.5 py-1 rounded-md border border-emerald-600 bg-emerald-600 text-white font-medium text-xs tracking-wide transform -rotate-6 pointer-events-none shadow-sm flex items-center gap-1.5"
+              className="absolute top-4 left-4 z-30 px-3 py-1.5 rounded-md border border-emerald-600 bg-emerald-600 text-white font-medium text-xs tracking-wide transform -rotate-6 pointer-events-none shadow-sm flex items-center gap-1.5"
             >
-              <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+              <Check className="w-4 h-4 stroke-[2.5]" />
               <span>{isMultiQty ? `PICK +1 (${currentPicked + 1}/${totalQty})` : 'PICK ITEM'}</span>
             </div>
           )}
@@ -175,34 +215,64 @@ export const SwipeCardPicker: React.FC<SwipeCardPickerProps> = ({
           {rejectOpacity > 0 && (
             <div
               style={{ opacity: rejectOpacity }}
-              className="absolute top-4 right-4 z-30 px-2.5 py-1 rounded-md border border-amber-600 bg-amber-600 text-white font-medium text-xs tracking-wide transform rotate-6 pointer-events-none shadow-sm flex items-center gap-1.5"
+              className="absolute top-4 right-4 z-30 px-3 py-1.5 rounded-md border border-amber-600 bg-amber-600 text-white font-medium text-xs tracking-wide transform rotate-6 pointer-events-none shadow-sm flex items-center gap-1.5"
             >
-              <X className="w-3.5 h-3.5 stroke-[2.5]" />
+              <X className="w-4 h-4 stroke-[2.5]" />
               <span>SUB / ISSUE</span>
             </div>
           )}
 
-          {/* CARD TOP ROW: Location & Zone */}
-          <div className="flex items-center justify-between z-10 text-xs">
-            <div className="flex items-center gap-1.5 text-neutral-700 font-medium">
-              <MapPin className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
-              <span>{currentItem.aisle || 'Aisle 1'}</span>
-              <span className="text-neutral-300">·</span>
-              <span>{currentItem.shelf || 'Bay 1'}</span>
-            </div>
+          {/* CARD TOP ROW: Bundle context & Location */}
+          <div className="flex flex-col gap-1 z-10">
+            {activeGroup && (
+              <div className="flex items-center justify-between text-[11px] pb-1 border-b border-neutral-100 dark:border-neutral-800">
+                <div className="flex items-center gap-1 text-indigo-700 dark:text-indigo-300 font-medium truncate">
+                  <Layers className="w-3.5 h-3.5 shrink-0" />
+                  <span className="truncate">{activeGroup.name}</span>
+                </div>
+                {currentItem.componentRole && (
+                  <span
+                    className={`text-[9px] font-mono font-medium px-1.5 py-0.2 rounded uppercase shrink-0 ${
+                      currentItem.componentRole === 'COMPONENT'
+                        ? 'bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300'
+                        : currentItem.componentRole === 'MODIFIER'
+                        ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800'
+                        : currentItem.componentRole === 'CUSTOMISATION'
+                        ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+                        : currentItem.componentRole === 'UPSELL'
+                        ? 'bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800'
+                        : 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
+                    }`}
+                  >
+                    {currentItem.componentRole}
+                  </span>
+                )}
+              </div>
+            )}
 
-            <div className="flex items-center gap-1.5 text-neutral-500 text-[11px]">
-              <span>{currentItem.temperature || 'Ambient'}</span>
-              {currentItem.ageRestricted && (
-                <span className="text-[10px] font-semibold px-1.5 py-0.2 rounded bg-rose-50 text-rose-700 border border-rose-200">
-                  18+
+            <div className="flex items-center justify-between text-xs">
+              <div className="flex items-center gap-1.5 text-neutral-700 dark:text-neutral-300 font-medium">
+                <MapPin className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
+                <span className={currentItem.aisle ? '' : 'italic text-neutral-400 dark:text-neutral-500'}>
+                  {locationDisplay}
                 </span>
-              )}
+              </div>
+
+              <div className="flex items-center gap-1.5 text-neutral-500 dark:text-neutral-400 text-[11px]">
+                {currentItem.temperature && (
+                  <span>{currentItem.temperature}</span>
+                )}
+                {currentItem.ageRestricted && (
+                  <span className="text-[10px] font-semibold px-1.5 py-0.2 rounded bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-800">
+                    18+
+                  </span>
+                )}
+              </div>
             </div>
           </div>
 
-          {/* HERO PRODUCT IMAGE (Clean, hairline border, no clutter) */}
-          <div className="relative w-full h-44 rounded-lg overflow-hidden my-2 border border-neutral-200/80 bg-neutral-50 flex items-center justify-center">
+          {/* HERO PRODUCT IMAGE */}
+          <div className="relative w-full h-40 sm:h-44 rounded-lg overflow-hidden my-1.5 border border-neutral-200/80 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-800 flex items-center justify-center">
             {currentItem.imageUrl ? (
               <img
                 src={currentItem.imageUrl}
@@ -213,55 +283,65 @@ export const SwipeCardPicker: React.FC<SwipeCardPickerProps> = ({
             ) : (
               <div className="w-full h-full flex flex-col items-center justify-center text-neutral-400 p-4">
                 <Tag className="w-8 h-8 mb-1 opacity-40" />
-                <span className="text-xs font-mono">PLU {currentItem.plu}</span>
+                {currentItem.plu ? (
+                  <span className="text-xs font-mono">PLU {currentItem.plu}</span>
+                ) : (
+                  <span className="text-xs text-neutral-400 italic">No image available</span>
+                )}
               </div>
             )}
 
-            {/* Price tag */}
-            <div className="absolute top-2 right-2 px-2 py-0.5 rounded-md bg-white/95 backdrop-blur-xs border border-neutral-200/80 text-xs font-semibold text-neutral-900 font-mono shadow-xs">
-              £{(currentItem.price / 100).toFixed(2)}
-            </div>
+            {/* Price tag (honest: only show if price > 0) */}
+            {currentItem.price > 0 && (
+              <div className="absolute top-2 right-2 px-2 py-0.5 rounded-md bg-white/95 dark:bg-neutral-900/90 backdrop-blur-xs border border-neutral-200/80 dark:border-neutral-700 text-xs font-semibold text-neutral-900 dark:text-neutral-100 font-mono shadow-xs">
+                £{(currentItem.price / 100).toFixed(2)}
+              </div>
+            )}
 
-            {/* Category / Dept */}
+            {/* Department */}
             {currentItem.department && (
-              <div className="absolute bottom-2 left-2 px-2 py-0.5 rounded-md bg-white/90 backdrop-blur-xs border border-neutral-200/80 text-[10px] text-neutral-600">
+              <div className="absolute bottom-2 left-2 px-2 py-0.5 rounded-md bg-white/90 dark:bg-neutral-900/90 backdrop-blur-xs border border-neutral-200/80 dark:border-neutral-700 text-[10px] text-neutral-600 dark:text-neutral-300">
                 {currentItem.department}
               </div>
             )}
           </div>
 
-          {/* PRODUCT TITLE & IDENTIFIER */}
+          {/* PRODUCT TITLE & IDENTIFIERS */}
           <div className="text-left px-0.5">
-            <h3 className="text-[15px] font-semibold text-neutral-900 leading-snug line-clamp-2 mb-1">
+            <h3 className="text-[15px] font-semibold text-neutral-900 dark:text-neutral-100 leading-snug line-clamp-2 mb-1">
               {currentItem.name}
             </h3>
 
-            <div className="flex items-center gap-2 text-xs text-neutral-500 font-mono">
-              <span>PLU: {currentItem.plu}</span>
+            <div className="flex items-center gap-2 text-xs text-neutral-500 dark:text-neutral-400 font-mono">
+              {currentItem.plu && <span>PLU: {currentItem.plu}</span>}
               {currentItem.gtin && currentItem.gtin[0] && (
                 <span className="text-neutral-400">· GTIN: {currentItem.gtin[0].slice(-6)}</span>
               )}
             </div>
 
-            {/* Weight notice */}
+            {/* Weight notice (honest: do not fake 1.0kg) */}
             {currentItem.isWeight && (
-              <div className="mt-1.5 flex items-center gap-1.5 text-xs text-amber-800 bg-amber-50 border border-amber-200/80 px-2 py-1 rounded-md">
-                <Scale className="w-3.5 h-3.5 text-amber-700 shrink-0" />
-                <span>Weigh Item ({currentItem.expectedWeight || 1.0}kg expected)</span>
+              <div className="mt-1.5 flex items-center gap-1.5 text-xs text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/50 border border-amber-200/80 dark:border-amber-800 px-2 py-1 rounded-md">
+                <Scale className="w-3.5 h-3.5 text-amber-700 dark:text-amber-400 shrink-0" />
+                <span>
+                  {currentItem.expectedWeight
+                    ? `Weigh item (~${currentItem.expectedWeight}${currentItem.weightUnit || 'kg'} target)`
+                    : 'Weigh item'}
+                </span>
               </div>
             )}
           </div>
 
-          {/* QUANTITY SECTION - Clean, Calm, Modern */}
-          <div className="mt-2 pt-2 border-t border-neutral-100 flex items-center justify-between">
+          {/* QUANTITY SECTION */}
+          <div className="mt-1.5 pt-2 border-t border-neutral-100 dark:border-neutral-800 flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <span className="text-xs text-neutral-500">Required:</span>
-              <span className="font-mono text-base font-semibold text-neutral-900">
+              <span className="text-xs text-neutral-500 dark:text-neutral-400">Required:</span>
+              <span className="font-mono text-base font-semibold text-neutral-900 dark:text-neutral-100">
                 {totalQty} {totalQty > 1 ? 'units' : 'unit'}
               </span>
             </div>
 
-            {/* Step Indicators for multi-quantity */}
+            {/* Multi-unit indicators */}
             {isMultiQty ? (
               <div className="flex items-center gap-1">
                 {Array.from({ length: totalQty }).map((_, idx) => {
@@ -274,8 +354,8 @@ export const SwipeCardPicker: React.FC<SwipeCardPickerProps> = ({
                         isUnitDone
                           ? 'bg-emerald-600 text-white'
                           : isNextUnit
-                          ? 'bg-amber-50 border border-amber-300 text-amber-800'
-                          : 'bg-neutral-100 text-neutral-400'
+                          ? 'bg-amber-50 dark:bg-amber-950/60 border border-amber-300 text-amber-800 dark:text-amber-300'
+                          : 'bg-neutral-100 dark:bg-neutral-800 text-neutral-400'
                       }`}
                       title={`Unit ${idx + 1}`}
                     >
@@ -285,29 +365,31 @@ export const SwipeCardPicker: React.FC<SwipeCardPickerProps> = ({
                 })}
               </div>
             ) : (
-              <span className="text-[11px] text-neutral-400">Single item</span>
+              <span className="text-[11px] text-neutral-400 dark:text-neutral-500">1 unit</span>
             )}
           </div>
         </div>
       </div>
 
-      {/* ACTION BUTTONS: Calm, Modern, Clean Lines */}
+      {/* STICKY / TOUCH-OPTIMIZED ACTION BUTTONS (Touch targets >= 48px) */}
       <div className="w-full flex items-center gap-2 mt-3 px-1">
         {/* Issue / Substitute Button */}
         <button
+          type="button"
           onClick={() => triggerUnavailable(currentItem)}
-          className="flex-1 py-2 px-3 rounded-lg bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 text-neutral-700 font-medium text-xs flex items-center justify-center gap-1.5 transition active:scale-[0.98]"
+          className="min-h-[48px] flex-1 px-3 rounded-lg bg-neutral-50 hover:bg-neutral-100 dark:bg-neutral-800 dark:hover:bg-neutral-700 border border-neutral-200 dark:border-neutral-700 text-neutral-700 dark:text-neutral-200 font-medium text-xs flex items-center justify-center gap-1.5 transition active:scale-[0.98]"
           title="Item Unavailable or Substitute"
         >
-          <X className="w-3.5 h-3.5 text-neutral-500" />
+          <X className="w-4 h-4 text-neutral-500" />
           <span>Can't find</span>
         </button>
 
         {/* Scan Barcode shortcut button */}
         {onOpenBarcodeScan && (
           <button
+            type="button"
             onClick={onOpenBarcodeScan}
-            className="p-2 rounded-lg bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 text-neutral-600 flex items-center justify-center transition active:scale-[0.98]"
+            className="min-h-[48px] min-w-[48px] p-2.5 rounded-lg bg-neutral-50 hover:bg-neutral-100 dark:bg-neutral-800 dark:hover:bg-neutral-700 border border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-300 flex items-center justify-center transition active:scale-[0.98]"
             title="Scan with Camera"
           >
             <Camera className="w-4 h-4 text-neutral-500" />
@@ -316,34 +398,45 @@ export const SwipeCardPicker: React.FC<SwipeCardPickerProps> = ({
 
         {/* AI Vision Photo button */}
         <button
+          type="button"
           onClick={onOpenPhotoPick}
-          className="p-2 rounded-lg bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 text-neutral-600 flex items-center justify-center transition active:scale-[0.98]"
+          className="min-h-[48px] min-w-[48px] p-2.5 rounded-lg bg-neutral-50 hover:bg-neutral-100 dark:bg-neutral-800 dark:hover:bg-neutral-700 border border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-300 flex items-center justify-center transition active:scale-[0.98]"
           title="Photo Recognition"
         >
           <Sparkles className="w-4 h-4 text-indigo-500" />
         </button>
 
-        {/* Primary Pick Button */}
+        {/* Primary Pick Button (>= 48px height) */}
         <button
+          type="button"
           onClick={() => triggerPickUnit(currentItem)}
-          className="flex-[1.5] py-2 px-4 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-xs flex items-center justify-center gap-1.5 shadow-xs transition active:scale-[0.98]"
+          className="min-h-[48px] flex-[1.5] px-4 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-xs flex items-center justify-center gap-1.5 shadow-xs transition active:scale-[0.98]"
           title={isMultiQty ? `Declare Unit ${currentPicked + 1}` : 'Confirm Pick'}
         >
-          <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+          <Check className="w-4 h-4 stroke-[2.5]" />
           <span>
             {isMultiQty ? `Pick unit (+1)` : 'Confirm pick'}
           </span>
         </button>
       </div>
 
-      {/* Quick shortcut to declare all remaining */}
+      {/* Safe Pick All shortcut for multi-qty standalone items (guarded) */}
       {isMultiQty && (
-        <button
-          onClick={() => onPickUnit(currentItem, true)}
-          className="mt-2 text-[11px] text-neutral-400 hover:text-neutral-700 transition"
-        >
-          Pick all {totalQty} at once
-        </button>
+        <div className="mt-2 text-center">
+          {isSafeForPickAll ? (
+            <button
+              type="button"
+              onClick={() => onPickUnit(currentItem, true)}
+              className="text-xs text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 transition underline underline-offset-2 min-h-[32px] px-2 flex items-center mx-auto"
+            >
+              Pick all {remainingQty} remaining units at once
+            </button>
+          ) : (
+            <span className="text-[11px] text-amber-700 dark:text-amber-400 italic">
+              Individual verification required: {blockReasons[0]}
+            </span>
+          )}
+        </div>
       )}
     </div>
   );

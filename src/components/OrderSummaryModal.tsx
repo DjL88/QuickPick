@@ -5,8 +5,9 @@
  */
 
 import React, { useState } from 'react';
-import { CheckCheck, X, Bike, AlertCircle, ShoppingBag, ArrowRight } from 'lucide-react';
+import { CheckCheck, X, Bike, AlertCircle, ShoppingBag, ArrowRight, ShieldAlert, UserCheck, CheckCircle2 } from 'lucide-react';
 import { PickingOrder } from '@contracts/index.js';
+import { CollectionAgeVerificationModal } from './commerce/CollectionAgeVerificationModal.js';
 
 interface OrderSummaryModalProps {
   order: PickingOrder;
@@ -27,6 +28,13 @@ export const OrderSummaryModal: React.FC<OrderSummaryModalProps> = ({
   const [showRejectOptions, setShowRejectOptions] = useState(false);
   const [rejectReason, setRejectReason] = useState('Critical items out of stock');
   const [rejectReasonType, setRejectReasonType] = useState('CANCEL_ORDER');
+  const [showAgeModal, setShowAgeModal] = useState(false);
+  const [handoverVerified, setHandoverVerified] = useState(false);
+
+  const isCollection = order.orderType === 'PICKUP';
+  const hasAgeRestrictedItems = order.items.some(
+    (i) => i.ageRestricted || (i.minimumAge && i.minimumAge >= 18)
+  );
 
   const pickedItems = order.items.filter((i) => i.status === 'PICKED');
   const replacedItems = order.items.filter((i) => i.status === 'REPLACED');
@@ -131,6 +139,46 @@ export const OrderSummaryModal: React.FC<OrderSummaryModalProps> = ({
             ))}
           </div>
 
+          {/* Collection & Age Verification Requirement Banner */}
+          {(isCollection || hasAgeRestrictedItems) && (
+            <div className="p-3 rounded-xl bg-slate-900 text-white space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <ShieldAlert className="w-4 h-4 text-rose-400" />
+                  <div>
+                    <span className="text-xs font-bold block">
+                      {hasAgeRestrictedItems ? '18+ Age Restriction ID Verification' : 'Store Collection Verification'}
+                    </span>
+                    <span className="text-[11px] text-neutral-400">
+                      DOB/Photo ID check + Customer Signature / Code required
+                    </span>
+                  </div>
+                </div>
+
+                {handoverVerified ? (
+                  <span className="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-400 text-[11px] font-bold border border-emerald-500/30 flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3" /> Verified
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded-md bg-rose-500/20 text-rose-300 text-[11px] font-bold border border-rose-500/30">
+                    Action Required
+                  </span>
+                )}
+              </div>
+
+              {!handoverVerified && (
+                <button
+                  type="button"
+                  onClick={() => setShowAgeModal(true)}
+                  className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-lg flex items-center justify-center gap-1.5 transition"
+                >
+                  <UserCheck className="w-4 h-4" />
+                  <span>Verify ID (DOB / Photo ID) & Sign On Screen</span>
+                </button>
+              )}
+            </div>
+          )}
+
           {/* Courier Count Check */}
           <div className="p-3 rounded-lg bg-neutral-50 border border-neutral-200/80 flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -226,6 +274,18 @@ export const OrderSummaryModal: React.FC<OrderSummaryModalProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Collection & Age Verification Modal */}
+      {showAgeModal && (
+        <CollectionAgeVerificationModal
+          order={order}
+          onVerified={() => {
+            setHandoverVerified(true);
+            setShowAgeModal(false);
+          }}
+          onClose={() => setShowAgeModal(false)}
+        />
+      )}
     </div>
   );
 };

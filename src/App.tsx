@@ -33,16 +33,19 @@ import {
   ArrowLeft,
   ChevronDown,
   UserCheck,
-  Smartphone
+  Smartphone,
+  LayoutDashboard
 } from 'lucide-react';
 import {
   PickingOrder,
   PickingItem,
+  PickingGroup,
   PickerUser,
   StoreLocation,
   RemovalReason,
   UpdateOrderItemAction,
-  AuditLogEntry
+  AuditLogEntry,
+  getPickAllBlockReasons
 } from '@contracts/index.js';
 import { sounds } from './lib/audio.js';
 import { offlineQueue } from './lib/offlineQueue.js';
@@ -52,6 +55,8 @@ import { PWAInstallButton } from './components/PWAInstallButton.js';
 import { CameraBarcodeScanner } from './components/CameraBarcodeScanner.js';
 import { PhotoRecognitionModal } from './components/PhotoRecognitionModal.js';
 import { SwipeCardPicker } from './components/SwipeCardPicker.js';
+import { OrderGroupRail } from './components/OrderGroupRail.js';
+import { HeadsUpDisplay } from './components/HeadsUpDisplay.js';
 import { WeightEntryModal } from './components/WeightEntryModal.js';
 import { SubstitutionModal } from './components/SubstitutionModal.js';
 import { CourierModal } from './components/CourierModal.js';
@@ -60,14 +65,36 @@ import { AuditTrailDrawer } from './components/AuditTrailDrawer.js';
 import { SimulatorDrawer } from './components/SimulatorDrawer.js';
 import { TeamPresenceBar } from './components/TeamPresenceBar.js';
 import { DavidVictorModal } from './components/DavidVictorModal.js';
+import { ConsumerOrderingApp } from './components/commerce/ConsumerOrderingApp.js';
 
 export default function App() {
   const isOnline = useOnlineStatus();
 
   // App Navigation & Selected State
-  const [currentView, setCurrentView] = useState<'queue' | 'picking'>('queue');
+  const [currentView, setCurrentView] = useState<'ordering' | 'queue' | 'picking' | 'headsup'>(() => {
+    if (typeof window !== 'undefined') {
+      if (window.location.pathname.startsWith('/headsup')) return 'headsup';
+      if (window.location.pathname.startsWith('/picker')) return 'queue';
+    }
+    return 'ordering';
+  });
   const [pickMode, setPickMode] = useState<'swipe' | 'list'>('swipe');
   const [queueTab, setQueueTab] = useState<'ALL' | 'NOT_STARTED' | 'IN_PROGRESS' | 'COMPLETED'>('ALL');
+
+  // Handle URL path changes
+  useEffect(() => {
+    const handlePopState = () => {
+      if (window.location.pathname.startsWith('/headsup')) {
+        setCurrentView('headsup');
+      } else if (window.location.pathname.startsWith('/picker')) {
+        setCurrentView('queue');
+      } else if (currentView === 'headsup') {
+        setCurrentView('ordering');
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [currentView]);
 
   // Stores & Current Picker
   const [currentUser, setCurrentUser] = useState<PickerUser>({
@@ -344,6 +371,20 @@ export default function App() {
     }
   };
 
+  // QP-02 Safe Group Pick All: iterates through safe items and invokes per-line pick
+  const handlePickAllGroupItems = async (group: PickingGroup, safeItems: PickingItem[]) => {
+    if (!activeOrder) return;
+    sounds.playPickSuccess();
+    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+      navigator.vibrate([30, 40, 50]);
+    }
+
+    for (const it of safeItems) {
+      await handleDirectPick(it, undefined, true);
+    }
+    showToast(`Picked ${safeItems.length} items in ${group.name}`, 'success');
+  };
+
   // Substitute Item
   const handleReplaceItem = async (
     item: PickingItem,
@@ -571,6 +612,28 @@ export default function App() {
     return orders.filter((o) => o.pickerStatus === queueTab);
   }, [orders, queueTab]);
 
+  // -------------------------------------------------------------
+  // VIEW: HEADSUP KDS DISPLAY (QP-05)
+  // -------------------------------------------------------------
+  if (currentView === 'headsup') {
+    return (
+      <HeadsUpDisplay
+        onBackToPicker={() => {
+          if (typeof window !== 'undefined' && window.history.pushState) {
+            window.history.pushState({}, '', '/');
+          }
+          setCurrentView('queue');
+        }}
+        onSelectOrderToPick={(orderId) => {
+          setSelectedOrderId(orderId);
+          setCurrentView('picking');
+        }}
+        storeId={currentUser.storeId}
+        storeName={currentUser.storeName}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-neutral-50 text-neutral-800 flex flex-col font-sans selection:bg-emerald-500 selection:text-white">
       {/* 1. TOP GLOBAL APP BAR */}
@@ -586,6 +649,38 @@ export default function App() {
                 <img src="/icon.svg" alt="LTx Cart Logo" className="w-full h-full object-cover" />
               </div>
               <span className="text-sm font-semibold tracking-tight text-neutral-900">LTx Picker</span>
+            </div>
+
+            <div className="hidden sm:block w-[1px] h-4 bg-neutral-200" />
+
+            {/* Experience Navigation Tabs */}
+            <div className="flex bg-neutral-100 p-0.5 rounded-lg text-xs font-semibold">
+              <button
+                type="button"
+                onClick={() => setCurrentView('ordering')}
+                className={`px-2.5 py-1 rounded-md transition flex items-center gap-1.5 ${
+                  currentView === 'ordering'
+                    ? 'bg-white text-emerald-950 font-bold shadow-xs'
+                    : 'text-neutral-600 hover:text-neutral-900'
+                }`}
+                title="Deliveroo / Uber Eats Consumer Ordering App"
+              >
+                <ShoppingBag className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Order Food & Groceries</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setCurrentView('queue')}
+                className={`px-2.5 py-1 rounded-md transition flex items-center gap-1.5 ${
+                  currentView === 'queue' || currentView === 'picking'
+                    ? 'bg-white text-neutral-900 font-bold shadow-xs'
+                    : 'text-neutral-600 hover:text-neutral-900'
+                }`}
+                title="LTx Store Order Picker"
+              >
+                <Package className="w-3.5 h-3.5 text-neutral-700" />
+                <span>QuickPick</span>
+              </button>
             </div>
 
             <div className="hidden sm:block w-[1px] h-4 bg-neutral-200" />
@@ -647,6 +742,21 @@ export default function App() {
             >
               <Sparkles className="w-3.5 h-3.5 text-neutral-500" />
               <span className="hidden sm:inline">Simulator</span>
+            </button>
+
+            {/* HeadsUp KDS Board Button (Desktop/Tablet) */}
+            <button
+              onClick={() => {
+                if (typeof window !== 'undefined' && window.history.pushState) {
+                  window.history.pushState({}, '', '/headsup');
+                }
+                setCurrentView('headsup');
+              }}
+              className="hidden md:flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-xs font-medium transition active:scale-[0.98]"
+              title="Open HeadsUp KDS Board"
+            >
+              <LayoutDashboard className="w-3.5 h-3.5 text-neutral-500" />
+              <span>HeadsUp</span>
             </button>
 
             {/* Active Picker Profile Pill */}
@@ -714,6 +824,24 @@ export default function App() {
               </div>
             </div>
           )}
+
+        {/* ======================================================== */}
+        {/* VIEW 0: DELIVEROO / UBER EATS CONSUMER ORDERING APP       */}
+        {/* ======================================================== */}
+        {currentView === 'ordering' && (
+          <ConsumerOrderingApp
+            onSwitchToPicker={(orderId) => {
+              setSelectedOrderId(orderId);
+              setCurrentView('picking');
+            }}
+            onSwitchToHeadsUp={() => {
+              if (typeof window !== 'undefined' && window.history.pushState) {
+                window.history.pushState({}, '', '/headsup');
+              }
+              setCurrentView('headsup');
+            }}
+          />
+        )}
 
         {/* ======================================================== */}
         {/* VIEW A: ORDER QUEUE                                       */}
@@ -953,11 +1081,23 @@ export default function App() {
               </div>
             )}
 
+            {/* QP-02 / QP-04 Order Group & Bundle Rail */}
+            {activeOrder.groups && activeOrder.groups.length > 0 && (
+              <OrderGroupRail
+                groups={activeOrder.groups}
+                items={activeOrder.items}
+                onPickAllSafeGroupItems={(group, safeItems) => {
+                  handlePickAllGroupItems(group, safeItems);
+                }}
+              />
+            )}
+
             {/* MODE 1: TINDER-STYLE SWIPE CARDS */}
             {pickMode === 'swipe' && (
               <div className="flex-1 flex flex-col justify-center py-1">
                 <SwipeCardPicker
                   items={activeOrder.items}
+                  groups={activeOrder.groups}
                   onPickUnit={(item, pickAll) => handleDirectPick(item, undefined, pickAll)}
                   onUnavailable={(item) => setShowSubModal(item)}
                   onWeightRequest={(item) => setShowWeightModal(item)}
@@ -973,7 +1113,7 @@ export default function App() {
                 {/* Auxiliary Scan Tools Bar in List Mode */}
                 <div className="flex items-center justify-between pb-1 text-xs">
                   <span className="text-neutral-500 font-medium">
-                    {activeOrder.items.filter((i) => i.status === 'PICKED').length} of {activeOrder.items.length} items picked
+                    {activeOrder.items.filter((i) => i.status === 'PICKED').length} of {activeOrder.items.filter(i => !i.isTextInstruction).length} pickable items picked
                   </span>
                   <div className="flex items-center gap-1.5">
                     <button
@@ -999,12 +1139,15 @@ export default function App() {
                   const isRemoved = item.status === 'REMOVED';
                   const isMulti = (item.quantity || 1) > 1;
                   const pickedCount = item.pickedQuantity || 0;
+                  const isTextNote = !!item.isTextInstruction;
 
                   return (
                     <div
                       key={item._id}
                       className={`p-3 rounded-lg border transition flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
-                        isPicked
+                        isTextNote
+                          ? 'bg-neutral-50 border-neutral-200/60 opacity-80'
+                          : isPicked
                           ? 'bg-emerald-50/30 border-emerald-200/80 opacity-90'
                           : isReplaced
                           ? 'bg-amber-50/30 border-amber-200/80'
@@ -1016,40 +1159,58 @@ export default function App() {
                       {/* Product Image & Main Details */}
                       <div className="flex items-center gap-3 flex-1 min-w-0">
                         {/* Visual Product Image */}
-                        <div className="relative w-16 h-16 sm:w-18 sm:h-18 rounded-md overflow-hidden border border-neutral-200/80 bg-neutral-50 shrink-0">
-                          {item.imageUrl ? (
-                            <img
-                              src={item.imageUrl}
-                              alt={item.name}
-                              className="w-full h-full object-cover"
-                            />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center text-neutral-400 bg-neutral-100">
-                              <ShoppingBag className="w-5 h-5 opacity-40" />
-                            </div>
-                          )}
+                        {!isTextNote && (
+                          <div className="relative w-16 h-16 sm:w-18 sm:h-18 rounded-md overflow-hidden border border-neutral-200/80 bg-neutral-50 shrink-0">
+                            {item.imageUrl ? (
+                              <img
+                                src={item.imageUrl}
+                                alt={item.name}
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center text-neutral-400 bg-neutral-100">
+                                <ShoppingBag className="w-5 h-5 opacity-40" />
+                              </div>
+                            )}
 
-                          {/* Price Tag Overlay */}
-                          <div className="absolute bottom-1 right-1 px-1 py-0.2 rounded bg-white/95 text-[10px] font-mono font-medium text-neutral-900 border border-neutral-200/80">
-                            £{(item.price / 100).toFixed(2)}
+                            {/* Price Tag Overlay */}
+                            {item.price > 0 && (
+                              <div className="absolute bottom-1 right-1 px-1 py-0.2 rounded bg-white/95 text-[10px] font-mono font-medium text-neutral-900 border border-neutral-200/80">
+                                £{(item.price / 100).toFixed(2)}
+                              </div>
+                            )}
                           </div>
-                        </div>
+                        )}
 
                         {/* Title & Metadata */}
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-1.5 mb-0.5 text-xs text-neutral-500 font-medium">
-                            <span>{item.aisle || 'Aisle 1'}</span>
-                            <span>·</span>
-                            <span>{item.shelf || 'Bay 1'}</span>
-                            <span className="text-[10px] text-neutral-400">({item.temperature || 'Ambient'})</span>
+                          <div className="flex items-center gap-1.5 mb-0.5 text-xs text-neutral-500 font-medium flex-wrap">
+                            {item.componentRole && (
+                              <span className="text-[9px] uppercase font-mono px-1 py-0.2 rounded bg-neutral-100 border border-neutral-200 text-neutral-700">
+                                {item.componentRole}
+                              </span>
+                            )}
+                            {item.aisle ? (
+                              <span>
+                                {item.aisle}
+                                {item.shelf ? ` · ${item.shelf}` : ''}
+                              </span>
+                            ) : (
+                              <span className="italic text-neutral-400">
+                                {isTextNote ? 'Customisation Note' : 'Location not set'}
+                              </span>
+                            )}
+                            {item.temperature && (
+                              <span className="text-[10px] text-neutral-400">({item.temperature})</span>
+                            )}
                           </div>
 
-                          <h4 className="text-xs sm:text-sm font-semibold text-neutral-900 truncate mb-0.5">
+                          <h4 className={`text-xs sm:text-sm font-semibold text-neutral-900 truncate mb-0.5 ${isTextNote ? 'italic text-neutral-600' : ''}`}>
                             {item.name}
                           </h4>
 
                           <div className="flex items-center gap-2 text-[11px] text-neutral-500 font-mono">
-                            <span>PLU: {item.plu}</span>
+                            {item.plu && <span>PLU: {item.plu}</span>}
                             {item.pickedWeight && (
                               <span className="text-emerald-700 font-sans">({item.pickedWeight}kg)</span>
                             )}
@@ -1060,75 +1221,83 @@ export default function App() {
                         </div>
                       </div>
 
-                      {/* Right: Prominent Quantity & Multi-Scan Declaration Actions */}
-                      <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-center gap-2 pt-2 sm:pt-0 border-t sm:border-t-0 border-neutral-100">
-                        {/* Obvious Quantity Badge */}
-                        <div className="flex items-center gap-2">
-                          <div className={`px-2 py-0.5 rounded-md font-mono flex items-center gap-1 border ${
-                            isMulti
-                              ? 'bg-amber-50 border-amber-200/80 text-amber-900'
-                              : 'bg-neutral-100 border-neutral-200/80 text-neutral-800'
-                          }`}>
-                            <span className="text-[10px] font-medium text-neutral-500">QTY</span>
-                            <span className="text-xs font-semibold">{item.quantity}</span>
-                          </div>
-
-                          {isMulti && !isPicked && (
-                            <span className="text-[11px] text-neutral-600 font-medium">
-                              {pickedCount}/{item.quantity} declared
-                            </span>
-                          )}
+                      {/* Right: Quantity & Actions (or Note badge for text instructions) */}
+                      {isTextNote ? (
+                        <div className="flex items-center justify-end">
+                          <span className="text-xs text-neutral-400 italic px-2 py-1 rounded bg-neutral-100">
+                            Instruction only
+                          </span>
                         </div>
+                      ) : (
+                        <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-center gap-2 pt-2 sm:pt-0 border-t sm:border-t-0 border-neutral-100">
+                          {/* Obvious Quantity Badge */}
+                          <div className="flex items-center gap-2">
+                            <div className={`px-2 py-0.5 rounded-md font-mono flex items-center gap-1 border ${
+                              isMulti
+                                ? 'bg-amber-50 border-amber-200/80 text-amber-900'
+                                : 'bg-neutral-100 border-neutral-200/80 text-neutral-800'
+                            }`}>
+                              <span className="text-[10px] font-medium text-neutral-500">QTY</span>
+                              <span className="text-xs font-semibold">{item.quantity}</span>
+                            </div>
 
-                        {/* Status / Buttons */}
-                        {isPicked ? (
-                          <div className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200/80 text-xs font-medium flex items-center gap-1">
-                            <Check className="w-3.5 h-3.5 stroke-[2.5]" />
-                            <span>Picked</span>
-                          </div>
-                        ) : isReplaced ? (
-                          <div className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 border border-amber-200/80 text-xs font-medium">
-                            Substituted
-                          </div>
-                        ) : isRemoved ? (
-                          <div className="px-2 py-0.5 rounded-md bg-neutral-100 text-neutral-500 border border-neutral-200 text-xs font-medium">
-                            Removed
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-1.5">
-                            <button
-                              onClick={() => setShowSubModal(item)}
-                              className="p-1.5 rounded-md bg-white hover:bg-neutral-50 border border-neutral-200 text-neutral-500 transition"
-                              title="Unavailable / Substitute"
-                            >
-                              <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
-                            </button>
-
-                            {/* Declare 1 Unit Button */}
-                            <button
-                              onClick={() => {
-                                if (item.isWeight) setShowWeightModal(item);
-                                else handleDirectPick(item, undefined, false);
-                              }}
-                              className="px-2.5 py-1 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-xs flex items-center gap-1 shadow-xs active:scale-[0.98] transition"
-                            >
-                              <Check className="w-3.5 h-3.5 stroke-[2.5]" />
-                              <span>{isMulti ? `+1 (${pickedCount + 1}/${item.quantity})` : 'Pick'}</span>
-                            </button>
-
-                            {/* Declare All button for multi-qty */}
-                            {isMulti && (
-                              <button
-                                onClick={() => handleDirectPick(item, undefined, true)}
-                                className="px-2 py-1 rounded-md bg-neutral-100 hover:bg-neutral-200 text-neutral-700 font-medium text-[11px] border border-neutral-200 transition"
-                                title="Declare all units"
-                              >
-                                All
-                              </button>
+                            {isMulti && !isPicked && (
+                              <span className="text-[11px] text-neutral-600 font-medium">
+                                {pickedCount}/{item.quantity} declared
+                              </span>
                             )}
                           </div>
-                        )}
-                      </div>
+
+                          {/* Status / Buttons */}
+                          {isPicked ? (
+                            <div className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200/80 text-xs font-medium flex items-center gap-1">
+                              <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                              <span>Picked</span>
+                            </div>
+                          ) : isReplaced ? (
+                            <div className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 border border-amber-200/80 text-xs font-medium">
+                              Substituted
+                            </div>
+                          ) : isRemoved ? (
+                            <div className="px-2 py-0.5 rounded-md bg-neutral-100 text-neutral-500 border border-neutral-200 text-xs font-medium">
+                              Removed
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                onClick={() => setShowSubModal(item)}
+                                className="p-1.5 rounded-md bg-white hover:bg-neutral-50 border border-neutral-200 text-neutral-500 transition"
+                                title="Unavailable / Substitute"
+                              >
+                                <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                              </button>
+
+                              {/* Declare 1 Unit Button */}
+                              <button
+                                onClick={() => {
+                                  if (item.isWeight) setShowWeightModal(item);
+                                  else handleDirectPick(item, undefined, false);
+                                }}
+                                className="px-2.5 py-1 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-xs flex items-center gap-1 shadow-xs active:scale-[0.98] transition"
+                              >
+                                <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                                <span>{isMulti ? `+1 (${pickedCount + 1}/${item.quantity})` : 'Pick'}</span>
+                              </button>
+
+                              {/* Declare All button for multi-qty (guarded) */}
+                              {isMulti && (
+                                <button
+                                  onClick={() => handleDirectPick(item, undefined, true)}
+                                  className="px-2 py-1 rounded-md bg-neutral-100 hover:bg-neutral-200 text-neutral-700 font-medium text-[11px] border border-neutral-200 transition"
+                                  title="Declare all units"
+                                >
+                                  All
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   );
                 })}

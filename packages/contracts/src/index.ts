@@ -1,7 +1,8 @@
 /**
  * @file packages/contracts/src/index.ts
  * Shared contracts and types for Deliverect Generic Picking API,
- * Inbound Webhooks, Outbox System, and Picker App state.
+ * Inbound Webhooks, Outbox System, Group/Bundle Model (QP-02),
+ * Picking Engine (QP-03), Mobile UI (QP-04), and HeadsUp & Printer Seam (QP-05).
  */
 
 export type OrderStatus = 'SCHEDULED' | 'PROCESSING' | 'FINALIZED' | 'CANCELLED';
@@ -19,6 +20,26 @@ export type TemperatureZone = 'AMBIENT' | 'CHILLED' | 'FROZEN';
 export type ItemStatus = 'PENDING' | 'PICKED' | 'REPLACED' | 'REMOVED';
 
 export type RemovalReason = 'OUT_OF_STOCK' | 'DAMAGED' | 'EXPIRED' | 'CUSTOMER_REQUEST' | 'OTHER';
+
+export type ComponentRole =
+  | 'COMPONENT'
+  | 'MODIFIER'
+  | 'CUSTOMISATION'
+  | 'UPSELL'
+  | 'ADD_ON';
+
+export type PickAllPolicy = 'SAFE_CHILDREN_ONLY' | 'DISABLED' | 'NONE';
+
+export interface PickingGroup {
+  id: string;
+  name: string;
+  type?: 'BUNDLE' | 'MEAL_DEAL' | 'COMBO' | 'COLLECTION' | string;
+  itemIds: string[];
+  pickAllPolicy?: PickAllPolicy;
+  parentItemId?: string;
+  totalCount?: number;
+  pickedCount?: number;
+}
 
 export interface ItemModifier {
   _id?: string;
@@ -46,6 +67,13 @@ export interface PickingItem {
   subItems?: PickingSubItem[];
   modifiers?: ItemModifier[];
   itemUnavailableActions?: ItemUnavailableAction[];
+
+  // Group & Bundle relationship (QP-02)
+  groupId?: string;
+  componentRole?: ComponentRole;
+  isTextInstruction?: boolean; // non-pickable text-only instruction such as "No mayonnaise"
+  requiresBarcodeScan?: boolean;
+  requiresIndividualVerification?: boolean;
 
   // Retail & Grocery enrichment
   department?: string;
@@ -90,6 +118,7 @@ export interface CustomerInfo {
   name: string;
   phone?: string;
   email?: string;
+  address?: string;
 }
 
 export interface PickingOrder {
@@ -103,6 +132,7 @@ export interface PickingOrder {
   customer: CustomerInfo;
   note?: string;
   items: PickingItem[];
+  groups?: PickingGroup[];
   status: OrderStatus;
   pickerStatus: PickerStatus;
 
@@ -112,6 +142,7 @@ export interface PickingOrder {
   completedAt?: string;
   assignedPickerId?: string;
   assignedPickerName?: string;
+  collaboratorCount?: number;
   rawPayload?: any;
   metadata?: Record<string, any>;
 
@@ -251,4 +282,114 @@ export interface PickerMetrics {
   avgPickSecondsPerItem: number;
   substitutionRate: number; // percentage
   removalRate: number; // percentage
+}
+
+// -------------------------------------------------------------
+// QP-05 PRINTER & DEVICE SEAM CONTRACTS
+// -------------------------------------------------------------
+export type PrintJobType = 'RECEIPT' | 'TOTE_LABEL' | 'BAG_LABEL';
+
+export interface PrintJobItem {
+  name: string;
+  quantity: number;
+  plu?: string;
+  pickedWeight?: number;
+  price?: number;
+  isReplacement?: boolean;
+}
+
+export interface PrintJob {
+  id: string;
+  type: PrintJobType;
+  orderId: string;
+  channelOrderDisplayId: string;
+  customerName: string;
+  timestamp: string;
+  toteId?: string;
+  bagIndex?: number;
+  totalBags?: number;
+  courierCount?: number;
+  items?: PrintJobItem[];
+  formattedPayload?: string;
+  metadata?: Record<string, any>;
+}
+
+export interface PrintResult {
+  success: boolean;
+  jobId: string;
+  printedAt: string;
+  type: PrintJobType;
+  message?: string;
+  error?: string;
+}
+
+export interface PrinterProvider {
+  name: string;
+  print(job: Omit<PrintJob, 'id' | 'timestamp'>): Promise<PrintResult>;
+  getRecentJobs(): Promise<PrintJob[]>;
+  clearJobs?(): Promise<void>;
+}
+
+// -------------------------------------------------------------
+// QP-03 PICKING ENGINE TRANSITION TYPES
+// -------------------------------------------------------------
+export interface PickingTransitionResult {
+  order: PickingOrder;
+  actionTaken: string;
+  changedItemIds: string[];
+  changedGroupIds: string[];
+  blockReasons?: string[];
+  success: boolean;
+  message?: string;
+}
+
+/**
+ * Authoritative QP-02 safety validator for Pick All eligibility.
+ * Evaluates whether an item or group line is safe for bulk/all declaration.
+ * Returns an array of blocking reasons. If empty, the item is safe.
+ */
+export function getPickAllBlockReasons(item: PickingItem, group?: PickingGroup): string[] {
+  const reasons: string[] = [];
+
+  // 1. Group policy check if group is provided
+  if (group && group.pickAllPolicy !== 'SAFE_CHILDREN_ONLY') {
+    reasons.push('Group policy does not permit Pick All');
+  }
+
+  // 2. Weighing required
+  if (item.isWeight) {
+    reasons.push('Requires scale weighing');
+  }
+
+  // 3. Age verification (18+ alcohol, tobacco, restricted)
+  if (item.ageRestricted) {
+    reasons.push('Requires 18+ age verification');
+  }
+
+  // 4. Barcode scan requirement
+  if (item.requiresBarcodeScan) {
+    reasons.push('Requires physical barcode scan');
+  }
+
+  // 5. Explicit individual verification
+  if (item.requiresIndividualVerification) {
+    reasons.push('Requires individual item verification');
+  }
+
+  // 6. Pending/suggested substitution or active replacement
+  if (item.status === 'REPLACED' || item.replacement || item.syncState === 'PENDING') {
+    reasons.push('Pending or active substitution');
+  }
+
+  // 7. Synthetic or missing source identity
+  if (!item.plu && !item.channelItemId && (!item.gtin || item.gtin.length === 0)) {
+    reasons.push('Missing source identity (no PLU/GTIN/channelItemId)');
+  }
+
+  // 8. Non-pickable instruction line (e.g. text customisation)
+  if (item.isTextInstruction) {
+    reasons.push('Non-pickable text instruction');
+  }
+
+  return reasons;
 }
