@@ -671,7 +671,7 @@ export default function App() {
               </div>
               <div className="text-left min-w-0">
                 <div className="ltx-display text-[15px] font-semibold leading-none text-white">QuickPick</div>
-                <div className="text-[10px] text-white/55 mt-1 leading-none truncate">by LTx · {${currentUser.storeName}}</div>
+                <div className="text-[10px] text-white/55 mt-1 leading-none truncate">by LTx · {currentUser.storeName}</div>
               </div>
             </button>
 
