@@ -9,6 +9,8 @@
 import React from 'react';
 import { Layers, Sparkles, Check, AlertCircle, Info, ChevronRight, CheckCircle2 } from 'lucide-react';
 import { PickingGroup, PickingItem, getPickAllBlockReasons } from '@contracts/index.js';
+import { HoldToConfirmButton } from './HoldToConfirmButton.js';
+import { buildGroupPickAllPlan } from '../lib/pickAllGuard.js';
 
 interface OrderGroupRailProps {
   groups?: PickingGroup[];
@@ -36,14 +38,15 @@ export const OrderGroupRail: React.FC<OrderGroupRailProps> = ({
         const totalCount = pickableItems.length;
         const isGroupComplete = totalCount > 0 && pickedCount === totalCount;
 
-        // Determine safe items for Pick All
+        // Determine safe items for Pick All using a fingerprinted plan.
+        // The fingerprint is checked again after the hold gesture so an SSE/live
+        // change cannot silently bulk-pick stale item state.
         const pendingPickableItems = pickableItems.filter((item) => item.status === 'PENDING');
-        const safePendingItems = pendingPickableItems.filter(
-          (item) => getPickAllBlockReasons(item, group).length === 0
+        const pickAllPlan = buildGroupPickAllPlan(group, groupItems);
+        const safePendingItems = pendingPickableItems.filter((item) =>
+          pickAllPlan.eligibleItemIds.includes(item._id)
         );
-        const hasUnsafeItems = pendingPickableItems.some(
-          (item) => getPickAllBlockReasons(item, group).length > 0
-        );
+        const hasUnsafeItems = pickAllPlan.blockedItems.length > 0;
 
         const canPickAll =
           group.pickAllPolicy === 'SAFE_CHILDREN_ONLY' &&
@@ -94,19 +97,32 @@ export const OrderGroupRail: React.FC<OrderGroupRailProps> = ({
 
               {/* Safe Group Pick All button */}
               {canPickAll && onPickAllSafeGroupItems && !isGroupComplete && (
-                <button
-                  type="button"
-                  onClick={() => onPickAllSafeGroupItems(group, safePendingItems)}
-                  className="px-2.5 py-1 rounded-md bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-medium flex items-center gap-1 transition active:scale-[0.98] shrink-0"
+                <HoldToConfirmButton
+                  guardKey={pickAllPlan.fingerprint}
+                  holdMs={650}
+                  onConfirm={() => {
+                    // Rebuild against the latest render before handing work to App.
+                    const latestPlan = buildGroupPickAllPlan(group, items);
+                    const latestSafeItems = items.filter((item) =>
+                      latestPlan.eligibleItemIds.includes(item._id)
+                    );
+                    if (latestSafeItems.length > 0) {
+                      onPickAllSafeGroupItems(group, latestSafeItems);
+                    }
+                  }}
+                  className="min-h-[48px] px-3 rounded-md bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-medium flex items-center justify-center transition active:scale-[0.98] shrink-0"
                   title={
                     hasUnsafeItems
-                      ? `Pick ${safePendingItems.length} safe items (unsafe items will remain individual)`
-                      : `Pick all ${safePendingItems.length} items in bundle`
+                      ? `Hold to pick ${safePendingItems.length} safe items; unsafe items stay individual`
+                      : `Hold to pick all ${safePendingItems.length} eligible items`
                   }
-                >
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>Pick safe ({safePendingItems.length})</span>
-                </button>
+                  label={
+                    <span className="flex items-center gap-1">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Hold · Pick safe ({safePendingItems.length})</span>
+                    </span>
+                  }
+                />
               )}
             </div>
 
