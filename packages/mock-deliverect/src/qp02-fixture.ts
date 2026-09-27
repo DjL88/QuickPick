@@ -5,11 +5,9 @@ import { normalisePickingStructure } from '../../contracts/src/index.js';
  * intentionally treated as tolerant input aliases, not asserted Deliverect
  * Generic Picking wire semantics.
  */
-export const groupedDemo = normalisePickingStructure([
+const grouped = normalisePickingStructure([
   {
     _id: 'demo-deal',
-    itemType: 'DEAL',
-    isContainer: true,
     name: 'Lunch meal deal',
     subItems: [
       {
@@ -90,3 +88,8 @@ export const groupedDemo = normalisePickingStructure([
     ],
   },
 ], { orderId: 'demo-order' });
+
+const rootBundle = grouped.groups.find((group) => !group.parentGroupId && group.type === 'BUNDLE');
+if (rootBundle) rootBundle.type = 'DEAL';
+
+export const groupedDemo = grouped;
