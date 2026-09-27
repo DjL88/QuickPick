@@ -66,6 +66,7 @@ import { SimulatorDrawer } from './components/SimulatorDrawer.js';
 import { TeamPresenceBar } from './components/TeamPresenceBar.js';
 import { DavidVictorModal } from './components/DavidVictorModal.js';
 import { ConsumerOrderingApp } from './components/commerce/ConsumerOrderingApp.js';
+import { buildGroupPickAllPlan } from './lib/pickAllGuard.js';
 
 export default function App() {
   const isOnline = useOnlineStatus();
@@ -371,18 +372,37 @@ export default function App() {
     }
   };
 
-  // QP-02 Safe Group Pick All: iterates through safe items and invokes per-line pick
+  // Safe Group Pick All: revalidate against the latest in-memory order at execution time.
+  // The UI already fingerprints the hold gesture; this second gate prevents a stale
+  // item snapshot from reaching per-line mutations if live state moved in between.
   const handlePickAllGroupItems = async (group: PickingGroup, safeItems: PickingItem[]) => {
     if (!activeOrder) return;
+
+    const latestOrder =
+      orders.find((order) => order._id === activeOrder._id) || activeOrder;
+    const latestPlan = buildGroupPickAllPlan(group, latestOrder.items);
+    const requestedIds = new Set(safeItems.map((item) => item._id));
+    const latestSafeItems = latestOrder.items.filter(
+      (item) =>
+        requestedIds.has(item._id) &&
+        latestPlan.eligibleItemIds.includes(item._id)
+    );
+
+    if (latestSafeItems.length !== safeItems.length) {
+      sounds.playErrorBuzz();
+      showToast('Order changed while confirming. Review the bundle and hold again.', 'info');
+      return;
+    }
+
     sounds.playPickSuccess();
     if (typeof navigator !== 'undefined' && navigator.vibrate) {
       navigator.vibrate([30, 40, 50]);
     }
 
-    for (const it of safeItems) {
-      await handleDirectPick(it, undefined, true);
+    for (const item of latestSafeItems) {
+      await handleDirectPick(item, undefined, true);
     }
-    showToast(`Picked ${safeItems.length} items in ${group.name}`, 'success');
+    showToast(`Picked ${latestSafeItems.length} items in ${group.name}`, 'success');
   };
 
   // Substitute Item

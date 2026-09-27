@@ -47,4 +47,44 @@ describe('Webhook Deduplication by SHA-256', () => {
     expect(res2.body.status).toBe('ignored_duplicate');
     expect(res2.body.message).toContain('already processed');
   });
+  it('does not let an invalid HMAC delivery poison replay dedupe', async () => {
+    const payload = {
+      _id: 'ord_dedupe_hmac_' + Date.now(),
+      location: 'loc_london_flagship',
+      channelOrderId: 'DUP-HMAC-001',
+      items: [{ _id: 'i1', plu: '501235', name: 'Sparkling Water', quantity: 1, price: 120 }],
+    };
+
+    const rawBody = JSON.stringify(payload);
+    const secret = globalStore.getHmacSecret('loc_london_flagship');
+    const validSignature = mockServer.signPayload(rawBody, secret);
+    const invalidSignature = 'deadbeef'.repeat(8);
+
+    const invalid = await request(app)
+      .post('/picking/order')
+      .set('Content-Type', 'application/json')
+      .set('x-deliverect-hmac-sha256', invalidSignature)
+      .send(rawBody);
+
+    expect(invalid.status).toBe(401);
+
+    const valid = await request(app)
+      .post('/picking/order')
+      .set('Content-Type', 'application/json')
+      .set('x-deliverect-hmac-sha256', validSignature)
+      .send(rawBody);
+
+    expect(valid.status).toBe(200);
+    expect(valid.body.status).toBe('received');
+
+    const replay = await request(app)
+      .post('/picking/order')
+      .set('Content-Type', 'application/json')
+      .set('x-deliverect-hmac-sha256', validSignature)
+      .send(rawBody);
+
+    expect(replay.status).toBe(200);
+    expect(replay.body.status).toBe('ignored_duplicate');
+  });
+
 });

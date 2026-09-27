@@ -98,24 +98,16 @@ export function createApp(options: AppServerOptions = {}) {
     const rawBody = (req as any).rawBody || JSON.stringify(req.body);
     const bodyHash = hashRawBody(rawBody);
 
-    // 1. Check deduplication first
-    const isDuplicate = globalStore.checkAndRecordWebhookHash(bodyHash, req.body?._id);
-    if (isDuplicate) {
-      return res.status(200).json({
-        status: 'ignored_duplicate',
-        message: 'Order webhook already processed (sha256 match)',
-        hash: bodyHash,
-      });
-    }
-
-    // 2. Determine secret for location (staging often = locationId, or configured secret)
+    // 1. Determine secret for location (staging often = locationId, or configured secret)
     const locationId = req.body?.location || 'loc_london_flagship';
     const secret =
       process.env.HMAC_SECRET ||
       globalStore.getHmacSecret(locationId) ||
       locationId;
 
-    // 3. Verify HMAC (if HMAC headers are present or in strict verification mode)
+    // 2. Verify HMAC before recording replay state.
+    // An invalid delivery must never poison dedupe and cause a later valid retry
+    // with the same exact raw body to be ignored.
     const hasHmacHeader =
       req.headers[preferredHmacHeader.toLowerCase()] ||
       req.headers['x-server-authorization-hmac-sha256'];
@@ -128,6 +120,16 @@ export function createApp(options: AppServerOptions = {}) {
           details: hmacResult.error,
         });
       }
+    }
+
+    // 3. Only authenticated/accepted deliveries participate in replay dedupe.
+    const isDuplicate = globalStore.checkAndRecordWebhookHash(bodyHash, req.body?._id);
+    if (isDuplicate) {
+      return res.status(200).json({
+        status: 'ignored_duplicate',
+        message: 'Order webhook already processed (sha256 match)',
+        hash: bodyHash,
+      });
     }
 
     // 4. Respond 200 fast to Deliverect
