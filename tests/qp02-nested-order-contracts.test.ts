@@ -35,7 +35,7 @@ describe('QuickPick nested order contracts', () => {
     expect(standalone.groupId).toBeUndefined();
   });
 
-  it('keeps sensitive lines individual and bulk-picks only safe physical children', () => {
+  it('keeps sensitive lines individual and blocks unsafe parent-group Pick All', () => {
     const order = createNestedPickingOrder();
     const safeModifier = order.items.find((line) => line._id === 'item_modifier_demo')!;
     const instruction = order.items.find((line) => line._id === 'item_bundle_no_mayo_note')!;
@@ -55,20 +55,21 @@ describe('QuickPick nested order contracts', () => {
     const deal = order.groups!.find((group) => group.type === 'MEAL_DEAL')!;
     const result = PickingEngine.pickAllSafeGroup(order, deal.id);
 
-    expect(result.changedItemIds).toEqual(
-      expect.arrayContaining([
-        'item_bundle_sandwich_01',
-        'item_bundle_crisps_02',
-        'item_bundle_drink_03',
-        'item_modifier_demo',
-      ])
-    );
-    expect(result.changedItemIds).not.toContain('item_bundle_no_mayo_note');
-    expect(result.changedItemIds).not.toContain('item_bundle_apple_weighed_04');
-    expect(result.changedItemIds).not.toContain('item_bundle_beer_restricted_05');
-    expect(result.changedItemIds).not.toContain('item_customer_sub_demo');
+    // QP-03 deliberately makes parent-group Pick All all-or-nothing: if any
+    // remaining physical child needs individual handling, nothing is bulk-picked.
+    expect(result.success).toBe(false);
+    expect(result.changedItemIds).toEqual([]);
+    expect(result.blockReasons?.some((reason) => reason.includes('scale weighing'))).toBe(true);
+    expect(result.blockReasons?.some((reason) => reason.includes('age verification'))).toBe(true);
+    expect(result.blockReasons?.some((reason) => reason.includes('Customer-selected substitution'))).toBe(true);
 
-    const modifier = result.order.items.find((line) => line._id === 'item_modifier_demo')!;
+    // A fully-safe leaf group can still be bulk-picked independently.
+    const modifierGroup = order.groups!.find((group) => group.type === 'MODIFIER_GROUP')!;
+    const modifierResult = PickingEngine.pickAllSafeGroup(order, modifierGroup.id);
+    expect(modifierResult.success).toBe(true);
+    expect(modifierResult.changedItemIds).toEqual(['item_modifier_demo']);
+
+    const modifier = modifierResult.order.items.find((line) => line._id === 'item_modifier_demo')!;
     expect(modifier.parentLineId).toBe('item_bundle_sandwich_01');
     expect(modifier.groupIds).toEqual([deal.id, 'grp_modifier']);
   });

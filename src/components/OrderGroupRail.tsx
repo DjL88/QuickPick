@@ -8,7 +8,13 @@
 
 import React from 'react';
 import { Layers, Sparkles, Check, AlertCircle, Info, ChevronRight, CheckCircle2 } from 'lucide-react';
-import { PickingGroup, PickingItem, getPickAllBlockReasons } from '@contracts/index.js';
+import {
+  PickingGroup,
+  PickingItem,
+  getPickAllBlockReasonsForLine,
+  getPickingLineGroups,
+  isPickingLinePickable,
+} from '@contracts/index.js';
 import { HoldToConfirmButton } from './HoldToConfirmButton.js';
 import { buildGroupPickAllPlan } from '../lib/pickAllGuard.js';
 
@@ -32,8 +38,10 @@ export const OrderGroupRail: React.FC<OrderGroupRailProps> = ({
   return (
     <div className="space-y-2 mb-2.5">
       {groups.map((group) => {
-        const groupItems = items.filter((item) => item.groupId === group.id || group.itemIds.includes(item._id));
-        const pickableItems = groupItems.filter((item) => !item.isTextInstruction);
+        const groupItems = items.filter((item) =>
+          getPickingLineGroups(item, groups).some((candidate) => candidate.id === group.id)
+        );
+        const pickableItems = groupItems.filter(isPickingLinePickable);
         const pickedCount = pickableItems.filter((item) => item.status === 'PICKED').length;
         const totalCount = pickableItems.length;
         const isGroupComplete = totalCount > 0 && pickedCount === totalCount;
@@ -42,7 +50,7 @@ export const OrderGroupRail: React.FC<OrderGroupRailProps> = ({
         // The fingerprint is checked again after the hold gesture so an SSE/live
         // change cannot silently bulk-pick stale item state.
         const pendingPickableItems = pickableItems.filter((item) => item.status === 'PENDING');
-        const pickAllPlan = buildGroupPickAllPlan(group, groupItems);
+        const pickAllPlan = buildGroupPickAllPlan(group, items, groups);
         const safePendingItems = pendingPickableItems.filter((item) =>
           pickAllPlan.eligibleItemIds.includes(item._id)
         );
@@ -50,7 +58,8 @@ export const OrderGroupRail: React.FC<OrderGroupRailProps> = ({
 
         const canPickAll =
           group.pickAllPolicy === 'SAFE_CHILDREN_ONLY' &&
-          safePendingItems.length > 0;
+          safePendingItems.length > 0 &&
+          !hasUnsafeItems;
 
         return (
           <div
@@ -98,7 +107,8 @@ export const OrderGroupRail: React.FC<OrderGroupRailProps> = ({
                   holdMs={650}
                   onConfirm={() => {
                     // Rebuild against the latest render before handing work to App.
-                    const latestPlan = buildGroupPickAllPlan(group, items);
+                    const latestPlan = buildGroupPickAllPlan(group, items, groups);
+                    if (latestPlan.blockedItems.length > 0) return;
                     const latestSafeItems = items.filter((item) =>
                       latestPlan.eligibleItemIds.includes(item._id)
                     );
@@ -107,15 +117,11 @@ export const OrderGroupRail: React.FC<OrderGroupRailProps> = ({
                     }
                   }}
                   className="min-h-[48px] px-3 rounded-xl ltx-secondary text-xs font-semibold flex items-center justify-center transition active:scale-[0.98] shrink-0"
-                  title={
-                    hasUnsafeItems
-                      ? `Hold to pick ${safePendingItems.length} safe items; unsafe items stay individual`
-                      : `Hold to pick all ${safePendingItems.length} eligible items`
-                  }
+                  title={`Hold to pick all ${safePendingItems.length} remaining items`}
                   label={
                     <span className="flex items-center gap-1">
                       <CheckCircle2 className="w-3.5 h-3.5 text-[var(--ltx-brand)]" />
-                      <span>Hold · Pick safe ({safePendingItems.length})</span>
+                      <span>Hold · Pick all ({safePendingItems.length})</span>
                     </span>
                   }
                 />
@@ -127,7 +133,7 @@ export const OrderGroupRail: React.FC<OrderGroupRailProps> = ({
               {groupItems.map((item) => {
                 const isPicked = item.status === 'PICKED';
                 const isActive = item._id === activeItemId;
-                const blockReasons = getPickAllBlockReasons(item, group);
+                const blockReasons = getPickAllBlockReasonsForLine(item, groups);
                 const isSafe = blockReasons.length === 0;
 
                 return (

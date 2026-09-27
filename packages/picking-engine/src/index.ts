@@ -13,9 +13,117 @@ import {
   getPickAllBlockReasons,
   getPickAllBlockReasonsForLine,
   getGroupLineIds,
+  getPickingLineGroups,
   isPickingLinePickable,
   RemovalReason,
+  AuditLogEntry,
+  TemperatureZone,
 } from '../../contracts/src/index.js';
+
+
+export interface RouteStop {
+  itemId: string;
+  aisle?: string;
+  shelf?: string;
+  temperature?: TemperatureZone;
+  groupIds: string[];
+}
+
+export interface PickingRoutePlan {
+  orderId: string;
+  stops: RouteStop[];
+  sections: Array<{
+    key: string;
+    label: string;
+    temperature?: TemperatureZone;
+    aisle?: string;
+    itemIds: string[];
+  }>;
+}
+
+export interface BatchTotePlan {
+  orders: Array<{ orderId: string; toteId: string }>;
+  stops: Array<{
+    key: string;
+    itemName: string;
+    plu?: string;
+    temperature?: TemperatureZone;
+    aisle?: string;
+    puts: Array<{ toteId: string; orderId: string; itemId: string; quantity: number }>;
+  }>;
+}
+
+export interface ZonePickPlan {
+  orderId: string;
+  zones: Array<{
+    zone: TemperatureZone | 'UNASSIGNED';
+    itemIds: string[];
+    complete: boolean;
+  }>;
+}
+
+export interface PickingUndoToken {
+  orderId: string;
+  actionTaken: string;
+  createdAt: string;
+  before: PickingOrder;
+  expectedAfterFingerprint: string;
+}
+
+const TEMP_RANK: Record<TemperatureZone | 'UNASSIGNED', number> = {
+  AMBIENT: 0,
+  CHILLED: 1,
+  FROZEN: 2,
+  UNASSIGNED: 3,
+};
+
+function lineBelongsToGroup(
+  item: PickingItem,
+  groupId: string,
+  groups: PickingGroup[] = []
+): boolean {
+  return getPickingLineGroups(item, groups).some((group) => group.id === groupId);
+}
+
+function aisleSortValue(aisle?: string): [number, string] {
+  if (!aisle) return [Number.MAX_SAFE_INTEGER, ''];
+  const match = aisle.match(/\d+/);
+  return [match ? Number(match[0]) : Number.MAX_SAFE_INTEGER - 1, aisle.toLowerCase()];
+}
+
+function routeCompare(a: PickingItem, b: PickingItem): number {
+  const tempA = TEMP_RANK[a.temperature || 'UNASSIGNED'];
+  const tempB = TEMP_RANK[b.temperature || 'UNASSIGNED'];
+  if (tempA !== tempB) return tempA - tempB;
+
+  const [aisleNumA, aisleTextA] = aisleSortValue(a.aisle);
+  const [aisleNumB, aisleTextB] = aisleSortValue(b.aisle);
+  if (aisleNumA !== aisleNumB) return aisleNumA - aisleNumB;
+  if (aisleTextA !== aisleTextB) return aisleTextA.localeCompare(aisleTextB);
+
+  const seqA = a.sequence ?? Number.MAX_SAFE_INTEGER;
+  const seqB = b.sequence ?? Number.MAX_SAFE_INTEGER;
+  if (seqA !== seqB) return seqA - seqB;
+  return a._id.localeCompare(b._id);
+}
+
+function orderFingerprint(order: PickingOrder): string {
+  return JSON.stringify({
+    id: order._id,
+    pickerStatus: order.pickerStatus,
+    status: order.status,
+    items: order.items.map((item) => ({
+      id: item._id,
+      status: item.status,
+      quantity: item.quantity,
+      pickedQuantity: item.pickedQuantity ?? 0,
+      pickedWeight: item.pickedWeight ?? null,
+      replacement: item.replacement ?? null,
+      removalReason: item.removalReason ?? null,
+      syncState: item.syncState ?? null,
+    })),
+  });
+}
 
 export class PickingEngine {
   /**
@@ -132,7 +240,7 @@ export class PickingEngine {
     order: PickingOrder,
     groupId: string
   ): PickingTransitionResult {
-    const group = order.groups?.find((g) => g.id === groupId);
+    const group = order.groups?.find((candidate) => candidate.id === groupId);
     if (!group) {
       return {
         order,
@@ -156,61 +264,88 @@ export class PickingEngine {
       };
     }
 
-    const changedItemIds: string[] = [];
+    const groups = order.groups || [group];
+    const pendingPhysical = order.items.filter(
+      (item) =>
+        lineBelongsToGroup(item, groupId, groups) &&
+        isPickingLinePickable(item) &&
+        item.status === 'PENDING'
+    );
+
+    if (pendingPhysical.length === 0) {
+      return {
+        order,
+        actionTaken: 'PICK_ALL_GROUP',
+        changedItemIds: [],
+        changedGroupIds: [],
+        success: false,
+        message: `Group ${group.name} has no pending physical items`,
+      };
+    }
+
+    const blocked = pendingPhysical.flatMap((item) =>
+      getPickAllBlockReasonsForLine(item, groups).map(
+        (reason) => `${item.name}: ${reason}`
+      )
+    );
+
+    // Pick All is deliberately all-or-nothing. If one remaining physical child
+    // requires scan, weight, age, substitution or other verification, the whole
+    // group stays individual so the action cannot imply more verification than
+    // actually happened.
+    if (blocked.length > 0) {
+      return {
+        order,
+        actionTaken: 'PICK_ALL_GROUP',
+        changedItemIds: [],
+        changedGroupIds: [],
+        blockReasons: Array.from(new Set(blocked)),
+        success: false,
+        message: `Group ${group.name} requires individual handling`,
+      };
+    }
+
+    const changedItemIds = pendingPhysical.map((item) => item._id);
+    const changedSet = new Set(changedItemIds);
     const now = new Date().toISOString();
 
-    const newItems = order.items.map((item) => {
-      if (item.groupId === groupId || getGroupLineIds(group).includes(item._id)) {
-        if (item.isTextInstruction || item.status === 'PICKED') {
-          return item;
-        }
-
-        const blockReasons = getPickAllBlockReasonsForLine(item, order.groups || [group]);
-        if (blockReasons.length === 0) {
-          changedItemIds.push(item._id);
-          return {
+    const newItems = order.items.map((item) =>
+      changedSet.has(item._id)
+        ? {
             ...item,
             pickedQuantity: item.quantity || 1,
             status: 'PICKED' as const,
             pickedAt: now,
             syncState: 'SYNCED' as const,
-          };
-        }
-      }
-      return item;
-    });
+          }
+        : item
+    );
 
-    // Update group statistics
-    const updatedGroups = order.groups?.map((g) => {
-      if (g.id === groupId) {
-        const grpItems = newItems.filter(
-          (it) => it.groupId === g.id || getGroupLineIds(g).includes(it._id)
-        );
-        const pickableGrpItems = grpItems.filter(isPickingLinePickable);
-        const pickedCount = pickableGrpItems.filter((it) => it.status === 'PICKED').length;
-        return {
-          ...g,
-          pickedCount,
-          totalCount: pickableGrpItems.length,
-        };
-      }
-      return g;
+    const updatedGroups = order.groups?.map((candidate) => {
+      const candidateItems = newItems.filter(
+        (item) =>
+          lineBelongsToGroup(item, candidate.id, groups) &&
+          isPickingLinePickable(item)
+      );
+      return {
+        ...candidate,
+        pickedCount: candidateItems.filter((item) => item.status === 'PICKED').length,
+        totalCount: candidateItems.length,
+      };
     });
-
-    const updatedOrder: PickingOrder = {
-      ...order,
-      items: newItems,
-      groups: updatedGroups,
-      pickerStatus: 'IN_PROGRESS',
-    };
 
     return {
-      order: updatedOrder,
+      order: {
+        ...order,
+        items: newItems,
+        groups: updatedGroups,
+        pickerStatus: 'IN_PROGRESS',
+      },
       actionTaken: 'PICK_ALL_GROUP',
       changedItemIds,
       changedGroupIds: [groupId],
       success: true,
-      message: `Picked ${changedItemIds.length} safe items in group ${group.name}`,
+      message: `Picked all ${changedItemIds.length} remaining items in group ${group.name}`,
     };
   }
 
@@ -423,8 +558,8 @@ export class PickingEngine {
     unsafePendingCount: number;
   } {
     const group = order.groups?.find((g) => g.id === groupId);
-    const grpItems = order.items.filter(
-      (i) => i.groupId === groupId || (group ? getGroupLineIds(group).includes(i._id) : false)
+    const grpItems = order.items.filter((item) =>
+      lineBelongsToGroup(item, groupId, order.groups || (group ? [group] : []))
     );
     const pickableItems = grpItems.filter(isPickingLinePickable);
     const picked = pickableItems.filter((i) => i.status === 'PICKED').length;
@@ -450,4 +585,226 @@ export class PickingEngine {
       unsafePendingCount,
     };
   }
+
+  /**
+   * Deterministic route plan: ambient -> chilled -> frozen, then aisle/shelf
+   * sequence. No AI/provider dependency and no invented store geometry.
+   */
+  public static buildRoute(order: PickingOrder): PickingRoutePlan {
+    const pending = order.items
+      .filter((item) => isPickingLinePickable(item) && item.status === 'PENDING')
+      .slice()
+      .sort(routeCompare);
+
+    const stops: RouteStop[] = pending.map((item) => ({
+      itemId: item._id,
+      aisle: item.aisle,
+      shelf: item.shelf,
+      temperature: item.temperature,
+      groupIds: getPickingLineGroups(item, order.groups || []).map((group) => group.id),
+    }));
+
+    const sectionMap = new Map<string, PickingRoutePlan['sections'][number]>();
+    for (const item of pending) {
+      const key = `${item.temperature || 'UNASSIGNED'}|${item.aisle || 'Location not set'}`;
+      let section = sectionMap.get(key);
+      if (!section) {
+        section = {
+          key,
+          label: [item.temperature, item.aisle || 'Location not set']
+            .filter(Boolean)
+            .join(' · '),
+          temperature: item.temperature,
+          aisle: item.aisle,
+          itemIds: [],
+        };
+        sectionMap.set(key, section);
+      }
+      section.itemIds.push(item._id);
+    }
+
+    return { orderId: order._id, stops, sections: Array.from(sectionMap.values()) };
+  }
+
+  /**
+   * Demo batch/tote planner. It does not mutate orders or claim a Deliverect
+   * batch API: it only merges identical physical pick stops for picker guidance.
+   */
+  public static buildBatchTotePlan(orders: PickingOrder[]): BatchTotePlan {
+    const toteOrders = orders.map((order, index) => ({
+      orderId: order._id,
+      toteId: String.fromCharCode(65 + index),
+    }));
+    const toteByOrder = new Map(toteOrders.map((entry) => [entry.orderId, entry.toteId]));
+    const merged = new Map<string, BatchTotePlan['stops'][number]>();
+
+    for (const order of orders) {
+      for (const item of order.items.filter(
+        (candidate) => isPickingLinePickable(candidate) && candidate.status === 'PENDING'
+      )) {
+        const key = [
+          item.plu || item.channelItemId || item._id,
+          item.temperature || 'UNASSIGNED',
+          item.aisle || '',
+          item.shelf || '',
+        ].join('|');
+
+        let stop = merged.get(key);
+        if (!stop) {
+          stop = {
+            key,
+            itemName: item.name,
+            plu: item.plu || undefined,
+            temperature: item.temperature,
+            aisle: item.aisle,
+            puts: [],
+          };
+          merged.set(key, stop);
+        }
+
+        stop.puts.push({
+          toteId: toteByOrder.get(order._id)!,
+          orderId: order._id,
+          itemId: item._id,
+          quantity: item.quantity || 1,
+        });
+      }
+    }
+
+    const stops = Array.from(merged.values()).sort((a, b) => {
+      const itemA: PickingItem = {
+        _id: a.key,
+        plu: a.plu || '',
+        name: a.itemName,
+        quantity: 1,
+        price: 0,
+        status: 'PENDING',
+        temperature: a.temperature,
+        aisle: a.aisle,
+      };
+      const itemB: PickingItem = {
+        _id: b.key,
+        plu: b.plu || '',
+        name: b.itemName,
+        quantity: 1,
+        price: 0,
+        status: 'PENDING',
+        temperature: b.temperature,
+        aisle: b.aisle,
+      };
+      return routeCompare(itemA, itemB);
+    });
+
+    return { orders: toteOrders, stops };
+  }
+
+  /**
+   * Lightweight zone concept for the demo. Temperature is the only zone truth
+   * currently present in contracts, so unknown layout is explicit UNASSIGNED.
+   */
+  public static buildZonePlan(order: PickingOrder): ZonePickPlan {
+    const zones: Array<TemperatureZone | 'UNASSIGNED'> = [
+      'AMBIENT',
+      'CHILLED',
+      'FROZEN',
+      'UNASSIGNED',
+    ];
+
+    return {
+      orderId: order._id,
+      zones: zones
+        .map((zone) => {
+          const items = order.items.filter(
+            (item) =>
+              isPickingLinePickable(item) &&
+              (item.temperature || 'UNASSIGNED') === zone
+          );
+          return {
+            zone,
+            itemIds: items.map((item) => item._id),
+            complete:
+              items.length > 0 &&
+              items.every((item) => item.status !== 'PENDING'),
+          };
+        })
+        .filter((zone) => zone.itemIds.length > 0),
+    };
+  }
+
+  public static createUndoToken(
+    before: PickingOrder,
+    transition: PickingTransitionResult
+  ): PickingUndoToken | null {
+    if (!transition.success || transition.order._id !== before._id) return null;
+    return {
+      orderId: before._id,
+      actionTaken: transition.actionTaken,
+      createdAt: new Date().toISOString(),
+      before: structuredClone(before),
+      expectedAfterFingerprint: orderFingerprint(transition.order),
+    };
+  }
+
+  /**
+   * Conflict-safe local undo. Undo is rejected if the order has changed since
+   * the transition, preventing one picker from overwriting another picker's work.
+   * This is an internal demo state helper, not an undocumented Deliverect unpick API.
+   */
+  public static undo(
+    current: PickingOrder,
+    token: PickingUndoToken
+  ): PickingTransitionResult {
+    if (current._id !== token.orderId) {
+      return {
+        order: current,
+        actionTaken: 'UNDO',
+        changedItemIds: [],
+        changedGroupIds: [],
+        success: false,
+        message: 'Undo token belongs to another order',
+      };
+    }
+
+    if (orderFingerprint(current) !== token.expectedAfterFingerprint) {
+      return {
+        order: current,
+        actionTaken: 'UNDO',
+        changedItemIds: [],
+        changedGroupIds: [],
+        success: false,
+        message: 'Order changed after this action; undo is no longer safe',
+      };
+    }
+
+    return {
+      order: structuredClone(token.before),
+      actionTaken: 'UNDO',
+      changedItemIds: [],
+      changedGroupIds: [],
+      success: true,
+      message: `Undid ${token.actionTaken}`,
+    };
+  }
+
+  public static toAuditLog(
+    orderId: string,
+    actor: string,
+    transition: PickingTransitionResult
+  ): AuditLogEntry {
+    return {
+      id: `audit_${orderId}_${Date.now()}`,
+      orderId,
+      timestamp: new Date().toISOString(),
+      actor,
+      action: transition.actionTaken,
+      details: {
+        success: transition.success,
+        changedItemIds: transition.changedItemIds,
+        changedGroupIds: transition.changedGroupIds,
+        blockReasons: transition.blockReasons,
+        message: transition.message,
+      },
+    };
+  }
+
 }

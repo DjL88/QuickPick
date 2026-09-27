@@ -12,6 +12,9 @@ import {
   PickingGroup,
   PickingItem,
   getPickAllBlockReasons,
+  getPickAllBlockReasonsForLine,
+  getPickingLineGroups,
+  isPickingLinePickable,
 } from '@contracts/index.js';
 
 export interface GroupPickAllBlockedItem {
@@ -52,21 +55,24 @@ export function buildItemPickAllFingerprint(
 
 export function buildGroupPickAllPlan(
   group: PickingGroup,
-  items: PickingItem[]
+  items: PickingItem[],
+  groups: PickingGroup[] = [group]
 ): GroupPickAllPlan {
   const groupItems = items
-    .filter((item) => item.groupId === group.id || group.itemIds.includes(item._id))
+    .filter((item) =>
+      getPickingLineGroups(item, groups).some((candidate) => candidate.id === group.id)
+    )
     .sort((a, b) => a._id.localeCompare(b._id));
 
   const pendingPickable = groupItems.filter(
-    (item) => item.status === 'PENDING' && !item.isTextInstruction
+    (item) => item.status === 'PENDING' && isPickingLinePickable(item)
   );
 
   const eligibleItemIds: string[] = [];
   const blockedItems: GroupPickAllBlockedItem[] = [];
 
   for (const item of pendingPickable) {
-    const reasons = getPickAllBlockReasons(item, group);
+    const reasons = getPickAllBlockReasonsForLine(item, groups);
     if (reasons.length === 0) {
       eligibleItemIds.push(item._id);
     } else {
@@ -77,7 +83,11 @@ export function buildGroupPickAllPlan(
   const fingerprint = JSON.stringify({
     groupId: group.id,
     policy: group.pickAllPolicy ?? null,
-    items: groupItems.map((item) => stableItemState(item, group)),
+    items: groupItems.map((item) => ({
+      ...stableItemState(item, group),
+      nestedBlockReasons: getPickAllBlockReasonsForLine(item, groups),
+      groupIds: getPickingLineGroups(item, groups).map((candidate) => candidate.id),
+    })),
   });
 
   return {
@@ -91,9 +101,10 @@ export function buildGroupPickAllPlan(
 export function isGroupPickAllPlanCurrent(
   previousPlan: GroupPickAllPlan,
   group: PickingGroup,
-  items: PickingItem[]
+  items: PickingItem[],
+  groups: PickingGroup[] = [group]
 ): boolean {
-  const current = buildGroupPickAllPlan(group, items);
+  const current = buildGroupPickAllPlan(group, items, groups);
   return (
     current.fingerprint === previousPlan.fingerprint &&
     JSON.stringify(current.eligibleItemIds) ===
