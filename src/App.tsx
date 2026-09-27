@@ -655,151 +655,123 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-neutral-50 text-neutral-800 flex flex-col font-sans selection:bg-emerald-500 selection:text-white">
+    <div className="min-h-screen bg-[var(--ltx-canvas)] text-[var(--ltx-ink)] flex flex-col font-sans selection:bg-[var(--ltx-brand)] selection:text-white">
       {/* 1. TOP GLOBAL APP BAR */}
-      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-neutral-200/80">
-        <div className="max-w-4xl mx-auto px-4 py-2 flex items-center justify-between">
-          {/* Logo & Brand Identity */}
-          <div className="flex items-center gap-3">
-            <div
+      <header className="sticky top-0 z-40 bg-[var(--ltx-brand)] text-white border-b border-white/10">
+        <div className="max-w-4xl mx-auto px-4 py-2.5 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <button
+              type="button"
               onClick={() => setCurrentView('queue')}
-              className="flex items-center gap-2 cursor-pointer group"
+              className="flex items-center gap-2.5 min-w-0 rounded-xl ltx-focus"
+              title="QuickPick home"
             >
-              <div className="w-7 h-7 rounded-md overflow-hidden border border-neutral-200/80">
-                <img src="/icon.svg" alt="LTx Cart Logo" className="w-full h-full object-cover" />
+              <div className="w-8 h-8 rounded-xl overflow-hidden bg-white/8 border border-white/15 shrink-0">
+                <img src="/icon.svg" alt="LTx" className="w-full h-full object-cover" />
               </div>
-              <span className="text-sm font-semibold tracking-tight text-neutral-900">LTx Picker</span>
-            </div>
+              <div className="text-left min-w-0">
+                <div className="ltx-display text-[15px] font-semibold leading-none text-white">QuickPick</div>
+                <div className="text-[10px] text-white/55 mt-1 leading-none truncate">by LTx · {${currentUser.storeName}}</div>
+              </div>
+            </button>
 
-            <div className="hidden sm:block w-[1px] h-4 bg-neutral-200" />
-
-            {/* Experience Navigation Tabs */}
-            <div className="flex bg-neutral-100 p-0.5 rounded-lg text-xs font-semibold">
+            <nav className="hidden sm:flex items-center gap-1 ml-2" aria-label="QuickPick views">
               <button
                 type="button"
                 onClick={() => setCurrentView('ordering')}
-                className={`px-2.5 py-1 rounded-md transition flex items-center gap-1.5 ${
-                  currentView === 'ordering'
-                    ? 'bg-white text-emerald-950 font-bold shadow-xs'
-                    : 'text-neutral-600 hover:text-neutral-900'
-                }`}
-                title="Deliveroo / Uber Eats Consumer Ordering App"
+                className={`min-h-[36px] px-3 rounded-lg text-xs font-medium transition ${currentView === 'ordering'
+                    ? 'bg-white text-[var(--ltx-brand)]'
+                    : 'text-white/70 hover:text-white hover:bg-white/8'}`}
               >
-                <ShoppingBag className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Order Food & Groceries</span>
+                Shop demo
               </button>
               <button
                 type="button"
                 onClick={() => setCurrentView('queue')}
-                className={`px-2.5 py-1 rounded-md transition flex items-center gap-1.5 ${
-                  currentView === 'queue' || currentView === 'picking'
-                    ? 'bg-white text-neutral-900 font-bold shadow-xs'
-                    : 'text-neutral-600 hover:text-neutral-900'
-                }`}
-                title="LTx Store Order Picker"
+                className={`min-h-[36px] px-3 rounded-lg text-xs font-medium transition ${currentView === 'queue' || currentView === 'picking'
+                    ? 'bg-white text-[var(--ltx-brand)]'
+                    : 'text-white/70 hover:text-white hover:bg-white/8'}`}
               >
-                <Package className="w-3.5 h-3.5 text-neutral-700" />
-                <span>QuickPick</span>
+                Pick
               </button>
-            </div>
-
-            <div className="hidden sm:block w-[1px] h-4 bg-neutral-200" />
-
-            {/* Store Location Button */}
-            <button
-              onClick={() => setShowStorePicker(true)}
-              className="hidden sm:flex items-center gap-1.5 text-xs text-neutral-500 hover:text-neutral-900 transition font-medium"
-              title="Change store"
-            >
-              <MapPin className="w-3.5 h-3.5 text-neutral-400" />
-              <span className="truncate max-w-[140px]">{currentUser.storeName}</span>
-              <ChevronDown className="w-3 h-3 text-neutral-400" />
-            </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (typeof window !== 'undefined' && window.history.pushState) {
+                    window.history.pushState({}, '', '/headsup');
+                  }
+                  setCurrentView('headsup');
+                }}
+                className="hidden md:flex min-h-[36px] px-3 rounded-lg text-xs font-medium text-white/70 hover:text-white hover:bg-white/8 transition items-center gap-1.5"
+              >
+                <LayoutDashboard className="w-3.5 h-3.5" />
+                HeadsUp
+              </button>
+            </nav>
           </div>
 
-          {/* Quick Actions & Tools */}
-          <div className="flex items-center gap-1.5">
-            {/* Offline state badge */}
+          <div className="flex items-center gap-2 shrink-0">
             {!isOnline && (
-              <div className="flex items-center gap-1 px-2 py-1 rounded-md bg-amber-50 text-amber-800 border border-amber-200 text-[11px] font-medium">
+              <div className="flex items-center gap-1.5 px-2.5 min-h-[36px] rounded-lg bg-amber-300/15 text-amber-100 border border-amber-200/20 text-[11px] font-medium">
                 <WifiOff className="w-3.5 h-3.5" />
                 <span className="hidden sm:inline">Offline</span>
               </div>
             )}
 
-            {/* PWA Install Button */}
-            <PWAInstallButton />
+            <details className="relative group">
+              <summary className="list-none cursor-pointer min-h-[36px] px-3 rounded-lg bg-white/8 hover:bg-white/12 border border-white/10 text-white/80 hover:text-white text-xs font-medium flex items-center gap-1.5 transition">
+                Demo
+                <ChevronDown className="w-3.5 h-3.5 text-white/50" />
+              </summary>
+              <div className="absolute right-0 mt-2 w-52 rounded-xl bg-white text-neutral-800 border border-neutral-200 shadow-xl p-1.5 z-50">
+                <button
+                  type="button"
+                  onClick={() => setShowDavidVictorModal(true)}
+                  className="w-full min-h-[42px] px-3 rounded-lg hover:bg-neutral-50 text-left text-xs font-medium flex items-center gap-2"
+                >
+                  <ShoppingBag className="w-4 h-4 text-[var(--ltx-brand)]" />
+                  Inject demo order
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowSimulatorDrawer(true)}
+                  className="w-full min-h-[42px] px-3 rounded-lg hover:bg-neutral-50 text-left text-xs font-medium flex items-center gap-2"
+                >
+                  <Sparkles className="w-4 h-4 text-[var(--ltx-brand)]" />
+                  Deliverect simulator
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAndroidFrameMode(!androidFrameMode)}
+                  className="w-full min-h-[42px] px-3 rounded-lg hover:bg-neutral-50 text-left text-xs font-medium flex items-center gap-2"
+                >
+                  <Smartphone className="w-4 h-4 text-[var(--ltx-brand)]" />
+                  {androidFrameMode ? 'Fluid layout' : 'Phone frame'}
+                </button>
+                <div className="border-t border-neutral-100 mt-1 pt-1">
+                  <PWAInstallButton />
+                </div>
+              </div>
+            </details>
 
-            {/* David Victor Store trigger */}
-            <button
-              onClick={() => setShowDavidVictorModal(true)}
-              className="px-2.5 py-1.5 rounded-md bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-xs font-medium flex items-center gap-1.5 transition active:scale-[0.98]"
-              title="Inject test order from djl88/david-victor"
-            >
-              <ShoppingBag className="w-3.5 h-3.5 text-neutral-500" />
-              <span>+ Order</span>
-            </button>
-
-            {/* Android Handheld Mode Toggle */}
-            <button
-              onClick={() => setAndroidFrameMode(!androidFrameMode)}
-              className={`p-1.5 rounded-md border text-xs font-medium transition active:scale-[0.98] flex items-center gap-1 ${
-                androidFrameMode
-                  ? 'bg-neutral-900 text-white border-neutral-900'
-                  : 'bg-neutral-100 text-neutral-600 border-transparent hover:text-neutral-900'
-              }`}
-              title={androidFrameMode ? 'Switch to Fluid View' : 'Switch to Handheld Device View'}
-            >
-              <Smartphone className="w-3.5 h-3.5" />
-              <span className="hidden md:inline text-[11px]">{androidFrameMode ? 'Device' : 'Fluid'}</span>
-            </button>
-
-            {/* Deliverect Simulator trigger */}
-            <button
-              onClick={() => setShowSimulatorDrawer(true)}
-              className="px-2 py-1.5 rounded-md bg-neutral-100 hover:bg-neutral-200 text-neutral-600 text-xs font-medium flex items-center gap-1 transition active:scale-[0.98]"
-              title="Deliverect Generic Picking Simulator"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-neutral-500" />
-              <span className="hidden sm:inline">Simulator</span>
-            </button>
-
-            {/* HeadsUp KDS Board Button (Desktop/Tablet) */}
-            <button
-              onClick={() => {
-                if (typeof window !== 'undefined' && window.history.pushState) {
-                  window.history.pushState({}, '', '/headsup');
-                }
-                setCurrentView('headsup');
-              }}
-              className="hidden md:flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-xs font-medium transition active:scale-[0.98]"
-              title="Open HeadsUp KDS Board"
-            >
-              <LayoutDashboard className="w-3.5 h-3.5 text-neutral-500" />
-              <span>HeadsUp</span>
-            </button>
-
-            {/* Active Picker Profile Pill */}
             <button
               onClick={() => setShowStorePicker(true)}
-              className="ml-1 pl-2 pr-1.5 py-1 rounded-md bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-xs flex items-center gap-1.5 transition"
-              title={`Active Picker: ${currentUser.name}`}
+              className="w-9 h-9 rounded-full bg-white text-[var(--ltx-brand)] text-xs font-bold flex items-center justify-center border border-white/20 ltx-focus"
+              title={`Active picker: ${currentUser.name}`}
             >
-              <span className="text-[11px] font-medium hidden md:inline">{currentUser.name}</span>
-              <div className="w-5 h-5 rounded-full bg-emerald-600 text-white text-[10px] font-semibold flex items-center justify-center">
-                {currentUser.name.charAt(0)}
-              </div>
+              {currentUser.name.charAt(0)}
             </button>
           </div>
         </div>
 
-        {/* Live Multi-Picker Team Presence strip */}
-        <TeamPresenceBar
-          currentUser={currentUser}
-          activePickers={activeTeam}
-          onSwitchUser={(user) => setCurrentUser(user)}
-          onOpenStoreSelector={() => setShowStorePicker(true)}
-        />
+        {currentView !== 'ordering' && (
+          <TeamPresenceBar
+            currentUser={currentUser}
+            activePickers={activeTeam}
+            onSwitchUser={(user) => setCurrentUser(user)}
+            onOpenStoreSelector={() => setShowStorePicker(true)}
+          />
+        )}
       </header>
 
       {/* 2. TOAST NOTIFICATION */}
@@ -871,33 +843,23 @@ export default function App() {
             {/* Queue Header & Actions */}
             <div className="flex items-center justify-between">
               <div>
-                <h1 className="text-base font-semibold text-neutral-900 tracking-tight">Pick Queue</h1>
+                <h1 className="ltx-display text-xl font-semibold text-[var(--ltx-ink)]">Pick queue</h1>
                 <p className="text-xs text-neutral-500">
                   {orders.length} orders scheduled for {currentUser.storeName}
                 </p>
               </div>
 
-              <div className="flex items-center gap-1.5">
-                <button
-                  onClick={() => setShowDavidVictorModal(true)}
-                  className="px-2.5 py-1 rounded-md bg-neutral-100 hover:bg-neutral-200 text-neutral-700 font-medium text-xs flex items-center gap-1.5 transition active:scale-[0.98]"
-                >
-                  <ShoppingBag className="w-3.5 h-3.5 text-neutral-500" />
-                  <span>+ DV Order</span>
-                </button>
-
-                <button
-                  onClick={fetchOrders}
-                  className="p-1.5 rounded-md text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100 transition"
-                  title="Refresh orders"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                </button>
-              </div>
+              <button
+                onClick={fetchOrders}
+                className="min-h-[40px] min-w-[40px] rounded-xl ltx-secondary flex items-center justify-center transition"
+                title="Refresh orders"
+              >
+                <RotateCcw className="w-4 h-4" />
+              </button>
             </div>
 
             {/* Clean Segmented Filter Tabs */}
-            <div className="flex bg-neutral-200/60 p-0.5 rounded-lg text-xs">
+            <div className="flex bg-[#e9eeee] dark:bg-neutral-800 p-1 rounded-xl text-xs">
               {[
                 { key: 'ALL', label: 'All Orders', count: orders.length },
                 {
@@ -965,7 +927,7 @@ export default function App() {
                       onClick={() => handleStartOrder(order)}
                       className={`p-3.5 rounded-lg border transition cursor-pointer relative bg-white hover:border-neutral-300/90 shadow-xs group ${
                         order.pickerStatus === 'IN_PROGRESS'
-                          ? 'border-emerald-300 ring-1 ring-emerald-200/60'
+                          ? 'border-[#7aa0aa] ring-1 ring-[#c7d9dd]'
                           : isUrgent
                           ? 'border-rose-200'
                           : 'border-neutral-200/80'
@@ -1018,7 +980,7 @@ export default function App() {
                           <span className="capitalize">{(order.orderType || 'DELIVERY').toLowerCase()}</span>
                         </div>
 
-                        <div className="flex items-center gap-1 font-medium text-emerald-700 group-hover:translate-x-0.5 transition">
+                        <div className="flex items-center gap-1 font-medium text-[var(--ltx-brand)] group-hover:translate-x-0.5 transition">
                           <span>
                             {order.pickerStatus === 'IN_PROGRESS' ? 'Resume Pick' : 'Start Pick'}
                           </span>
@@ -1039,7 +1001,7 @@ export default function App() {
         {currentView === 'picking' && activeOrder && (
           <div className="flex-1 flex flex-col space-y-3">
             {/* Top Order Nav & Modes */}
-            <div className="flex items-center justify-between bg-white px-3 py-2 rounded-lg border border-neutral-200/80 shadow-xs">
+            <div className="ltx-card flex items-center justify-between px-3 py-2.5">
               <button
                 onClick={() => setCurrentView('queue')}
                 className="flex items-center gap-1 text-xs text-neutral-500 hover:text-neutral-900 font-medium transition"
@@ -1082,7 +1044,7 @@ export default function App() {
 
                 <button
                   onClick={() => setShowSummaryModal(true)}
-                  className="px-2.5 py-1 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-xs flex items-center gap-1 shadow-xs transition"
+                  className="min-h-[40px] px-3 rounded-xl ltx-primary text-white font-medium text-xs flex items-center gap-1.5 transition"
                 >
                   <Check className="w-3.5 h-3.5 stroke-[2.5]" />
                   <span>Finish</span>
