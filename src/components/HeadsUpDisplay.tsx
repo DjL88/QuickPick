@@ -210,33 +210,34 @@ export const HeadsUpDisplay: React.FC<HeadsUpDisplayProps> = ({
   };
 
   return (
-    <div className="min-h-screen bg-neutral-900 text-neutral-100 flex flex-col font-sans selection:bg-emerald-500 selection:text-white">
+    <div className="min-h-screen bg-[#0b2026] text-neutral-100 flex flex-col font-sans selection:bg-white selection:text-[var(--ltx-brand)]">
       {/* 1. TOP KDS HEADSUP BAR */}
-      <header className="sticky top-0 z-40 bg-neutral-950/90 backdrop-blur-md border-b border-neutral-800 px-4 py-2.5 flex items-center justify-between">
+      <header className="sticky top-0 z-40 bg-[var(--ltx-brand-strong)] border-b border-white/10 px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
           {onBackToPicker && (
             <button
               onClick={onBackToPicker}
-              className="px-2.5 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-xs font-medium flex items-center gap-1.5 transition active:scale-[0.98]"
+              className="min-h-[40px] px-3 rounded-xl bg-white/8 hover:bg-white/12 text-white/75 text-xs font-medium flex items-center gap-1.5 transition active:scale-[0.98]"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
               <span>Mobile Picker</span>
             </button>
           )}
 
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-md bg-emerald-600 flex items-center justify-center text-white font-bold text-xs shadow-xs">
-              KDS
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl overflow-hidden border border-white/15 bg-white/5">
+              <img src="/icon.svg" alt="LTx" className="w-full h-full object-cover" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-sm font-semibold tracking-tight text-white">
-                  QuickPick HeadsUp
+                <h1 className="ltx-display text-base font-semibold text-white">
+                  HeadsUp
                 </h1>
-                <span className="text-[11px] px-1.5 py-0.2 rounded bg-neutral-800 text-neutral-400 font-mono">
+                <span className="text-[10px] px-2 py-1 rounded-lg bg-white/8 text-white/55">
                   {storeName}
                 </span>
               </div>
+              <div className="text-[10px] text-white/45 mt-0.5">QuickPick by LTx</div>
             </div>
           </div>
         </div>
@@ -275,9 +276,9 @@ export const HeadsUpDisplay: React.FC<HeadsUpDisplayProps> = ({
         <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-3 min-w-[320px] lg:min-w-[1200px] h-full">
           {/* COLUMN 1: NEW ORDERS */}
           <ColumnCardList
-            title="1. New Orders"
+            title="New"
             count={columns.new.length}
-            badgeColor="bg-blue-950/80 text-blue-300 border-blue-800"
+            badgeColor="bg-white/8 text-white/60 border-white/10"
             orders={columns.new}
             onAction={handleStartPickFromBoard}
             actionLabel="Start Pick"
@@ -286,9 +287,9 @@ export const HeadsUpDisplay: React.FC<HeadsUpDisplayProps> = ({
 
           {/* COLUMN 2: PICKING */}
           <ColumnCardList
-            title="2. Picking"
+            title="Picking"
             count={columns.picking.length}
-            badgeColor="bg-emerald-950/80 text-emerald-300 border-emerald-800"
+            badgeColor="bg-white/8 text-white/60 border-white/10"
             orders={columns.picking}
             onAction={handleStartPickFromBoard}
             actionLabel="Resume Pick"
@@ -297,9 +298,9 @@ export const HeadsUpDisplay: React.FC<HeadsUpDisplayProps> = ({
 
           {/* COLUMN 3: WAITING / APPROVAL */}
           <ColumnCardList
-            title="3. Waiting / Approval"
+            title="Approval"
             count={columns.waiting.length}
-            badgeColor="bg-amber-950/80 text-amber-300 border-amber-800"
+            badgeColor="bg-amber-300/10 text-amber-200 border-amber-200/15"
             orders={columns.waiting}
             onAction={handleStartPickFromBoard}
             actionLabel="Review"
@@ -308,9 +309,9 @@ export const HeadsUpDisplay: React.FC<HeadsUpDisplayProps> = ({
 
           {/* COLUMN 4: READY / PACKED */}
           <ColumnCardList
-            title="4. Ready / Packed"
+            title="Ready"
             count={columns.ready.length}
-            badgeColor="bg-purple-950/80 text-purple-300 border-purple-800"
+            badgeColor="bg-white/8 text-white/60 border-white/10"
             orders={columns.ready}
             onAction={(ord) => handlePrintReceipt(ord)}
             actionLabel="Print Receipt"
@@ -319,9 +320,9 @@ export const HeadsUpDisplay: React.FC<HeadsUpDisplayProps> = ({
 
           {/* COLUMN 5: EXCEPTIONS */}
           <ColumnCardList
-            title="5. Exceptions"
+            title="Exceptions"
             count={columns.exceptions.length}
-            badgeColor="bg-rose-950/80 text-rose-300 border-rose-800"
+            badgeColor="bg-rose-300/10 text-rose-200 border-rose-200/15"
             orders={columns.exceptions}
             onAction={handleStartPickFromBoard}
             actionLabel="Inspect"
@@ -431,10 +432,10 @@ const ColumnCardList: React.FC<ColumnCardListProps> = ({
   onOpenPrint,
 }) => {
   return (
-    <div className="flex flex-col bg-neutral-950/60 border border-neutral-800/80 rounded-xl overflow-hidden h-full">
+    <div className="flex flex-col bg-[#102a31] border border-white/8 rounded-2xl overflow-hidden h-full">
       {/* Column Header */}
-      <div className="p-2.5 border-b border-neutral-800/80 flex items-center justify-between bg-neutral-900/60 shrink-0">
-        <span className="text-xs font-semibold text-neutral-200">{title}</span>
+      <div className="p-3 border-b border-white/8 flex items-center justify-between bg-white/[0.025] shrink-0">
+        <span className="ltx-display text-sm font-semibold text-white/90">{title}</span>
         <span className={`text-[11px] font-mono px-2 py-0.2 rounded-full border font-semibold ${badgeColor}`}>
           {count}
         </span>
@@ -461,7 +462,7 @@ const ColumnCardList: React.FC<ColumnCardListProps> = ({
             return (
               <div
                 key={order._id}
-                className={`p-3 rounded-lg border bg-neutral-900/90 transition flex flex-col justify-between gap-2 shadow-xs hover:border-neutral-700 ${
+                className={`p-3 rounded-xl border bg-[#15333b] transition flex flex-col justify-between gap-2 hover:bg-[#173943] ${
                   isUrgent ? 'border-rose-900/80' : 'border-neutral-800'
                 }`}
               >
