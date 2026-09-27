@@ -24,6 +24,8 @@ import {
 } from 'lucide-react';
 import { PickingItem, PickingGroup, getPickAllBlockReasons } from '@contracts/index.js';
 import { sounds } from '../lib/audio.js';
+import { HoldToConfirmButton } from './HoldToConfirmButton.js';
+import { buildItemPickAllFingerprint } from '../lib/pickAllGuard.js';
 
 interface SwipeCardPickerProps {
   items: PickingItem[];
@@ -93,6 +95,7 @@ export const SwipeCardPicker: React.FC<SwipeCardPickerProps> = ({
   // Authoritative safety check for Pick All
   const blockReasons = getPickAllBlockReasons(currentItem, activeGroup);
   const isSafeForPickAll = blockReasons.length === 0;
+  const pickAllGuardKey = buildItemPickAllFingerprint(currentItem, activeGroup);
 
   const handleTouchStart = (e: React.TouchEvent | React.MouseEvent) => {
     setIsDragging(true);
@@ -424,13 +427,14 @@ export const SwipeCardPicker: React.FC<SwipeCardPickerProps> = ({
       {isMultiQty && (
         <div className="mt-2 text-center">
           {isSafeForPickAll ? (
-            <button
-              type="button"
-              onClick={() => onPickUnit(currentItem, true)}
-              className="text-xs text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 transition underline underline-offset-2 min-h-[32px] px-2 flex items-center mx-auto"
-            >
-              Pick all {remainingQty} remaining units at once
-            </button>
+            <HoldToConfirmButton
+              guardKey={pickAllGuardKey}
+              holdMs={650}
+              onConfirm={() => onPickUnit(currentItem, true)}
+              className="min-h-[48px] px-4 rounded-lg text-xs text-neutral-600 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-white bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 transition flex items-center justify-center mx-auto"
+              title={`Hold to pick all ${remainingQty} remaining units`}
+              label={`Hold · Pick all ${remainingQty} remaining`}
+            />
           ) : (
             <span className="text-[11px] text-amber-700 dark:text-amber-400 italic">
               Individual verification required: {blockReasons[0]}
