@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" rx="108" fill="#0d3944" />
+  <g fill="#ffffff">
+    <!-- Big Bold Stylized Letter A -->
+    <path d="M 256 104 C 270 104 282 112 288 126 L 416 384 C 420 392 418 402 410 408 L 362 408 C 354 408 346 402 342 394 L 306 316 L 206 316 L 170 394 C 166 402 158 408 150 408 L 102 408 C 94 402 92 392 96 384 L 224 126 C 230 112 242 104 256 104 Z M 256 172 L 224 252 L 288 252 Z" />
+
+    <!-- Center Crossbar Robot Controller Face Capsule -->
+    <rect x="180" y="220" width="152" height="74" rx="37" fill="#0d3944" />
+
+    <!-- Antenna -->
+    <rect x="251" y="196" width="10" height="28" rx="5" fill="#0d3944" />
+    <circle cx="256" cy="190" r="16" fill="#0d3944" />
+
+    <!-- Left Eye: Circle Button -->
+    <circle cx="222" cy="257" r="15" fill="#ffffff" />
+
+    <!-- Right Eye: Rounded X Button -->
+    <path d="M 280 248 C 282 246 286 246 288 248 L 293 253 L 298 248 C 300 246 304 246 306 248 C 308 250 308 254 306 256 L 301 261 L 306 266 C 308 268 308 272 306 274 C 304 276 300 276 298 274 L 293 269 L 288 274 C 286 276 282 276 280 274 C 278 272 278 268 280 266 L 285 261 L 280 256 C 278 254 278 250 280 248 Z" fill="#ffffff" />
+  </g>
+</svg>

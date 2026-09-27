@@ -1,0 +1,6 @@
+{
+  "name": "LTx Picker",
+  "description": "Fun, high-performance standalone picking app compatible with Deliverect's Generic Picking API, powered by Altie AI route planning and barcode/photo scanning.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
