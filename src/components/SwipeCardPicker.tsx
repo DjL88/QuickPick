@@ -18,11 +18,13 @@ import {
   ShieldAlert,
   Camera,
 } from 'lucide-react';
-import { PickingItem, getPickAllBlockReasons } from '@contracts/index.js';
+import { PickingGroup, PickingItem, getPickAllBlockReasons } from '@contracts/index.js';
+import { OrderGroupRail } from './OrderGroupRail.js';
 import { sounds } from '../lib/audio.js';
 
 interface SwipeCardPickerProps {
   items: PickingItem[];
+  groups?: PickingGroup[];
   onPickUnit: (item: PickingItem, pickAll?: boolean) => void;
   onUnavailable: (item: PickingItem) => void;
   onWeightRequest: (item: PickingItem) => void;
@@ -32,6 +34,7 @@ interface SwipeCardPickerProps {
 
 export const SwipeCardPicker: React.FC<SwipeCardPickerProps> = ({
   items,
+  groups = [],
   onPickUnit,
   onUnavailable,
   onWeightRequest,
@@ -130,6 +133,9 @@ export const SwipeCardPicker: React.FC<SwipeCardPickerProps> = ({
 
   return (
     <div className="relative w-full max-w-sm mx-auto flex flex-col items-center">
+      <div className="mb-3 w-full">
+        <OrderGroupRail groups={groups} items={items} />
+      </div>
       {/* Top Item Progress Line */}
       <div className="w-full flex items-center justify-between px-1 mb-2 text-xs">
         <span className="text-neutral-500 font-medium">
