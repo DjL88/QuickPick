@@ -22,6 +22,8 @@ export type ItemStatus = 'PENDING' | 'PICKED' | 'REPLACED' | 'REMOVED';
 export type RemovalReason = 'OUT_OF_STOCK' | 'DAMAGED' | 'EXPIRED' | 'CUSTOMER_REQUEST' | 'OTHER';
 
 export type ComponentRole =
+  | 'STANDALONE'
+  | 'PARENT'
   | 'COMPONENT'
   | 'MODIFIER'
   | 'CUSTOMISATION'
@@ -29,14 +31,47 @@ export type ComponentRole =
   | 'ADD_ON';
 
 export type PickAllPolicy = 'SAFE_CHILDREN_ONLY' | 'DISABLED' | 'NONE';
+export type PickingLineType = 'PRODUCT' | 'INSTRUCTION' | 'GROUP_PARENT';
+export type PickingGroupType =
+  | 'DEAL'
+  | 'MEAL_DEAL'
+  | 'BUNDLE'
+  | 'COMBO'
+  | 'MODIFIER_GROUP'
+  | 'CUSTOMISATION_GROUP'
+  | 'UPSELL_GROUP'
+  | 'ADD_ON_GROUP'
+  | 'COLLECTION'
+  | 'UNKNOWN';
+export type PickingGroupVerificationPolicy = 'INHERIT' | 'INDIVIDUAL_LINES';
+
+export interface CustomerSelectedSubstitution {
+  source: 'CUSTOMER';
+  itemId?: string;
+  channelItemId?: string;
+  plu?: string;
+  name?: string;
+  quantity?: number;
+  price?: number;
+  note?: string;
+  raw?: Record<string, unknown>;
+}
 
 export interface PickingGroup {
   id: string;
   name: string;
-  type?: 'BUNDLE' | 'MEAL_DEAL' | 'COMBO' | 'COLLECTION' | string;
+  type?: PickingGroupType;
+  /**
+   * Compatibility field retained for the current UI/engine. New code should treat
+   * lineIds as canonical when present and itemIds as the legacy alias.
+   */
   itemIds: string[];
+  lineIds?: string[];
   pickAllPolicy?: PickAllPolicy;
+  verificationPolicy?: PickingGroupVerificationPolicy;
   parentItemId?: string;
+  parentGroupId?: string;
+  childGroupIds?: string[];
   totalCount?: number;
   pickedCount?: number;
 }
@@ -69,11 +104,15 @@ export interface PickingItem {
   itemUnavailableActions?: ItemUnavailableAction[];
 
   // Group & Bundle relationship (QP-02)
-  groupId?: string;
+  lineType?: PickingLineType;
+  groupId?: string; // nearest / primary group for legacy callers
+  groupIds?: string[]; // outermost -> innermost memberships for nested deals/bundles
+  parentLineId?: string; // preserves parent/child relationship without flattening
   componentRole?: ComponentRole;
-  isTextInstruction?: boolean; // non-pickable text-only instruction such as "No mayonnaise"
+  isTextInstruction?: boolean; // compatibility flag for non-pickable instruction lines
   requiresBarcodeScan?: boolean;
   requiresIndividualVerification?: boolean;
+  customerSelectedSubstitution?: CustomerSelectedSubstitution;
 
   // Retail & Grocery enrichment
   department?: string;
@@ -113,6 +152,12 @@ export interface PickingItem {
   // Removal details
   removalReason?: RemovalReason;
 }
+
+/**
+ * Canonical internal name used by picker-domain code. PickingItem remains the
+ * compatibility name used throughout the existing prototype.
+ */
+export type PickingLine = PickingItem;
 
 export interface CustomerInfo {
   name: string;
@@ -344,52 +389,120 @@ export interface PickingTransitionResult {
 }
 
 /**
- * Authoritative QP-02 safety validator for Pick All eligibility.
- * Evaluates whether an item or group line is safe for bulk/all declaration.
- * Returns an array of blocking reasons. If empty, the item is safe.
+ * Return the line ids carried by a group. lineIds is the canonical field; the
+ * existing itemIds field remains supported so current UI code does not break.
  */
-export function getPickAllBlockReasons(item: PickingItem, group?: PickingGroup): string[] {
-  const reasons: string[] = [];
+export function getGroupLineIds(group: PickingGroup): string[] {
+  return group.lineIds && group.lineIds.length > 0 ? group.lineIds : group.itemIds;
+}
 
-  // 1. Group policy check if group is provided
-  if (group && group.pickAllPolicy !== 'SAFE_CHILDREN_ONLY') {
-    reasons.push('Group policy does not permit Pick All');
+/**
+ * Resolve every explicit and inherited group that constrains a line. groupIds is
+ * ordered outermost -> innermost, while groupId remains the nearest-group legacy
+ * shortcut. Parent groups are added defensively when only the leaf membership is
+ * supplied by an adapter.
+ */
+export function getPickingLineGroups(
+  line: PickingLine,
+  groups: PickingGroup[] = []
+): PickingGroup[] {
+  const byId = new Map(groups.map((group) => [group.id, group]));
+  const orderedIds: string[] = [];
+
+  const add = (id?: string) => {
+    if (id && !orderedIds.includes(id)) orderedIds.push(id);
+  };
+
+  line.groupIds?.forEach(add);
+  add(line.groupId);
+
+  for (let index = 0; index < orderedIds.length; index += 1) {
+    const group = byId.get(orderedIds[index]);
+    add(group?.parentGroupId);
   }
 
-  // 2. Weighing required
+  return orderedIds
+    .map((id) => byId.get(id))
+    .filter((group): group is PickingGroup => Boolean(group));
+}
+
+/**
+ * Product lines are physical pick tasks. Instruction/group-parent rows are kept
+ * in the order model so the UI can retain context without pretending they are
+ * products that need a scan/pick mutation.
+ */
+export function isPickingLinePickable(line: PickingLine): boolean {
+  if (line.isTextInstruction) return false;
+  return line.lineType !== 'INSTRUCTION' && line.lineType !== 'GROUP_PARENT';
+}
+
+/**
+ * Authoritative safety validator for Pick All eligibility.
+ *
+ * A child may participate in Pick All only when every group that constrains it
+ * allows SAFE_CHILDREN_ONLY and the line itself needs no physical/approval
+ * verification. This is intentionally conservative for the demo: unknown
+ * provider semantics stay individually handled instead of being guessed.
+ */
+export function getPickAllBlockReasons(
+  item: PickingLine,
+  group?: PickingGroup | PickingGroup[]
+): string[] {
+  const reasons: string[] = [];
+  const groups = group ? (Array.isArray(group) ? group : [group]) : [];
+
+  for (const candidate of groups) {
+    if (candidate.pickAllPolicy !== 'SAFE_CHILDREN_ONLY') {
+      reasons.push(`Group ${candidate.name} does not permit Pick All`);
+    }
+    if (candidate.verificationPolicy === 'INDIVIDUAL_LINES') {
+      reasons.push(`Group ${candidate.name} requires individual verification`);
+    }
+  }
+
+  if (!isPickingLinePickable(item)) {
+    reasons.push('Non-pickable instruction or group-parent line');
+  }
+
   if (item.isWeight) {
     reasons.push('Requires scale weighing');
   }
 
-  // 3. Age verification (18+ alcohol, tobacco, restricted)
   if (item.ageRestricted) {
-    reasons.push('Requires 18+ age verification');
+    reasons.push(`Requires ${item.minimumAge ?? 18}+ age verification`);
   }
 
-  // 4. Barcode scan requirement
   if (item.requiresBarcodeScan) {
     reasons.push('Requires physical barcode scan');
   }
 
-  // 5. Explicit individual verification
   if (item.requiresIndividualVerification) {
     reasons.push('Requires individual item verification');
   }
 
-  // 6. Pending/suggested substitution or active replacement
+  if (item.customerSelectedSubstitution) {
+    reasons.push('Customer-selected substitution requires individual verification');
+  }
+
   if (item.status === 'REPLACED' || item.replacement || item.syncState === 'PENDING') {
     reasons.push('Pending or active substitution');
   }
 
-  // 7. Synthetic or missing source identity
   if (!item.plu && !item.channelItemId && (!item.gtin || item.gtin.length === 0)) {
     reasons.push('Missing source identity (no PLU/GTIN/channelItemId)');
   }
 
-  // 8. Non-pickable instruction line (e.g. text customisation)
-  if (item.isTextInstruction) {
-    reasons.push('Non-pickable text instruction');
-  }
+  return Array.from(new Set(reasons));
+}
 
-  return reasons;
+/**
+ * Full nested-group Pick All evaluation used by the engine. This is preferred
+ * whenever the complete order/group set is available.
+ */
+export function getPickAllBlockReasonsForLine(
+  line: PickingLine,
+  groups: PickingGroup[] = []
+): string[] {
+  const constraints = getPickingLineGroups(line, groups);
+  return getPickAllBlockReasons(line, constraints);
 }
