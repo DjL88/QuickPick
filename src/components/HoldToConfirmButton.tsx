@@ -32,6 +32,7 @@ export const HoldToConfirmButton: React.FC<HoldToConfirmButtonProps> = ({
   title,
 }) => {
   const [holding, setHolding] = useState(false);
+  const [stale, setStale] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const startGuardRef = useRef<string | null>(null);
   const guardRef = useRef(guardKey);
@@ -70,6 +71,8 @@ export const HoldToConfirmButton: React.FC<HoldToConfirmButtonProps> = ({
         startGuardRef.current !== guardRef.current
       ) {
         startGuardRef.current = null;
+        setStale(true);
+        setTimeout(() => setStale(false), 1400);
         staleRef.current?.();
         return;
       }
@@ -112,7 +115,7 @@ export const HoldToConfirmButton: React.FC<HoldToConfirmButtonProps> = ({
         }}
       />
       <span className="relative z-10">
-        {holding ? confirmingLabel : label}
+        {stale ? 'Order changed — hold again' : holding ? confirmingLabel : label}
       </span>
     </button>
   );
