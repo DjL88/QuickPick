@@ -82,7 +82,7 @@ describe('QP-02 / QP-04: Group Data Wiring & Safe Pick All Rules', () => {
     };
 
     const reasons = getPickAllBlockReasons(textInstructionItem, sampleGroup);
-    expect(reasons).toContain('Non-pickable text instruction');
+    expect(reasons).toContain('Non-pickable instruction or group-parent line');
   });
 
   it('blocks Pick All for items requiring barcode scan or individual verification', () => {
@@ -122,7 +122,7 @@ describe('QP-02 / QP-04: Group Data Wiring & Safe Pick All Rules', () => {
     };
 
     const reasons = getPickAllBlockReasons(normalItem, disabledGroup);
-    expect(reasons).toContain('Group policy does not permit Pick All');
+    expect(reasons).toContain('Group Lunch Meal Deal does not permit Pick All');
   });
 
   it('loads realistic QP-02 grouped bundle fixture correctly', () => {
@@ -149,7 +149,7 @@ describe('QP-02 / QP-04: Group Data Wiring & Safe Pick All Rules', () => {
 
     expect(note?.componentRole).toBe('CUSTOMISATION');
     expect(note?.isTextInstruction).toBe(true);
-    expect(getPickAllBlockReasons(note!, group)).toContain('Non-pickable text instruction');
+    expect(getPickAllBlockReasons(note!, group)).toContain('Non-pickable instruction or group-parent line');
 
     expect(crisps?.componentRole).toBe('ADD_ON');
     expect(getPickAllBlockReasons(crisps!, group)).toHaveLength(0);

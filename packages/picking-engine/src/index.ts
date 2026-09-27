@@ -11,6 +11,9 @@ import {
   PickingGroup,
   PickingTransitionResult,
   getPickAllBlockReasons,
+  getPickAllBlockReasonsForLine,
+  getGroupLineIds,
+  isPickingLinePickable,
   RemovalReason,
 } from '../../contracts/src/index.js';
 
@@ -87,12 +90,12 @@ export class PickingEngine {
 
     if (order.groups && item.groupId) {
       updatedGroups = order.groups.map((grp) => {
-        if (grp.id === item.groupId || grp.itemIds.includes(item._id)) {
+        if (grp.id === item.groupId || getGroupLineIds(grp).includes(item._id)) {
           changedGroupIds.push(grp.id);
           const grpItems = newItems.filter(
-            (it) => it.groupId === grp.id || grp.itemIds.includes(it._id)
+            (it) => it.groupId === grp.id || getGroupLineIds(grp).includes(it._id)
           );
-          const pickableGrpItems = grpItems.filter((it) => !it.isTextInstruction);
+          const pickableGrpItems = grpItems.filter(isPickingLinePickable);
           const pickedCount = pickableGrpItems.filter((it) => it.status === 'PICKED').length;
           return {
             ...grp,
@@ -157,12 +160,12 @@ export class PickingEngine {
     const now = new Date().toISOString();
 
     const newItems = order.items.map((item) => {
-      if (item.groupId === groupId || group.itemIds.includes(item._id)) {
+      if (item.groupId === groupId || getGroupLineIds(group).includes(item._id)) {
         if (item.isTextInstruction || item.status === 'PICKED') {
           return item;
         }
 
-        const blockReasons = getPickAllBlockReasons(item, group);
+        const blockReasons = getPickAllBlockReasonsForLine(item, order.groups || [group]);
         if (blockReasons.length === 0) {
           changedItemIds.push(item._id);
           return {
@@ -181,9 +184,9 @@ export class PickingEngine {
     const updatedGroups = order.groups?.map((g) => {
       if (g.id === groupId) {
         const grpItems = newItems.filter(
-          (it) => it.groupId === g.id || g.itemIds.includes(it._id)
+          (it) => it.groupId === g.id || getGroupLineIds(g).includes(it._id)
         );
-        const pickableGrpItems = grpItems.filter((it) => !it.isTextInstruction);
+        const pickableGrpItems = grpItems.filter(isPickingLinePickable);
         const pickedCount = pickableGrpItems.filter((it) => it.status === 'PICKED').length;
         return {
           ...g,
@@ -421,9 +424,9 @@ export class PickingEngine {
   } {
     const group = order.groups?.find((g) => g.id === groupId);
     const grpItems = order.items.filter(
-      (i) => i.groupId === groupId || group?.itemIds.includes(i._id)
+      (i) => i.groupId === groupId || (group ? getGroupLineIds(group).includes(i._id) : false)
     );
-    const pickableItems = grpItems.filter((i) => !i.isTextInstruction);
+    const pickableItems = grpItems.filter(isPickingLinePickable);
     const picked = pickableItems.filter((i) => i.status === 'PICKED').length;
     const total = pickableItems.length;
 
@@ -432,7 +435,7 @@ export class PickingEngine {
     let unsafePendingCount = 0;
 
     for (const it of pending) {
-      if (getPickAllBlockReasons(it, group).length === 0) {
+      if (getPickAllBlockReasonsForLine(it, order.groups || (group ? [group] : [])).length === 0) {
         safePendingCount++;
       } else {
         unsafePendingCount++;
