@@ -162,7 +162,7 @@ export const SwipeCardPicker: React.FC<SwipeCardPickerProps> = ({
             Item <span className="font-mono text-neutral-900 dark:text-neutral-100 font-semibold">{pickableItems.length - pendingItems.length + 1}</span> of {pickableItems.length}
           </span>
           {activeGroup && (
-            <span className="text-[10px] font-medium px-1.5 py-0.2 rounded bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 flex items-center gap-1">
+            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-lg bg-[var(--ltx-brand-soft)] text-[var(--ltx-brand)] border border-[#c8dadd] dark:border-[#31505a] flex items-center gap-1">
               <Layers className="w-3 h-3" />
               <span>Bundle ({groupProgressText})</span>
             </span>
@@ -198,10 +198,10 @@ export const SwipeCardPicker: React.FC<SwipeCardPickerProps> = ({
             transform: `translate3d(${dragOffset.x}px, ${dragOffset.y}px, 0) rotate(${rotation}deg)`,
             transition: isDragging ? 'none' : 'transform 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
           }}
-          className={`absolute inset-0 rounded-xl bg-white dark:bg-neutral-900 border shadow-sm p-4 flex flex-col justify-between overflow-hidden cursor-grab active:cursor-grabbing transition-colors ${
+          className={`absolute inset-0 ltx-card p-4 flex flex-col justify-between overflow-hidden cursor-grab active:cursor-grabbing transition-colors ${
             unitFlash
-              ? 'border-emerald-500 ring-2 ring-emerald-500/20'
-              : 'border-neutral-200/90 dark:border-neutral-800'
+              ? 'border-[#4c7b87] ring-2 ring-[#4c7b87]/20'
+              : ''
           }`}
         >
           {/* Swipe Decision Overlays */}
@@ -235,17 +235,7 @@ export const SwipeCardPicker: React.FC<SwipeCardPickerProps> = ({
                 </div>
                 {currentItem.componentRole && (
                   <span
-                    className={`text-[9px] font-mono font-medium px-1.5 py-0.2 rounded uppercase shrink-0 ${
-                      currentItem.componentRole === 'COMPONENT'
-                        ? 'bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300'
-                        : currentItem.componentRole === 'MODIFIER'
-                        ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800'
-                        : currentItem.componentRole === 'CUSTOMISATION'
-                        ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
-                        : currentItem.componentRole === 'UPSELL'
-                        ? 'bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800'
-                        : 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
-                    }`}
+                    className="text-[9px] font-mono font-medium px-1.5 py-0.5 rounded-lg uppercase shrink-0 bg-[var(--ltx-brand-soft)] text-[var(--ltx-brand)] border border-[#c8dadd] dark:border-[#31505a]"
                   >
                     {currentItem.componentRole}
                   </span>
@@ -403,17 +393,17 @@ export const SwipeCardPicker: React.FC<SwipeCardPickerProps> = ({
         <button
           type="button"
           onClick={onOpenPhotoPick}
-          className="min-h-[48px] min-w-[48px] p-2.5 rounded-lg bg-neutral-50 hover:bg-neutral-100 dark:bg-neutral-800 dark:hover:bg-neutral-700 border border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-300 flex items-center justify-center transition active:scale-[0.98]"
-          title="Photo Recognition"
+          className="min-h-[48px] min-w-[48px] p-2.5 rounded-xl ltx-secondary flex items-center justify-center transition active:scale-[0.98]"
+          title="Photo assist"
         >
-          <Sparkles className="w-4 h-4 text-indigo-500" />
+          <Sparkles className="w-4 h-4 text-[var(--ltx-brand)]" />
         </button>
 
         {/* Primary Pick Button (>= 48px height) */}
         <button
           type="button"
           onClick={() => triggerPickUnit(currentItem)}
-          className="min-h-[48px] flex-[1.5] px-4 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-xs flex items-center justify-center gap-1.5 shadow-xs transition active:scale-[0.98]"
+          className="min-h-[48px] flex-[1.5] px-4 rounded-xl ltx-primary text-white font-semibold text-xs flex items-center justify-center gap-1.5 transition active:scale-[0.98]"
           title={isMultiQty ? `Declare Unit ${currentPicked + 1}` : 'Confirm Pick'}
         >
           <Check className="w-4 h-4 stroke-[2.5]" />
