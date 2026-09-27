@@ -76,7 +76,11 @@ export const SwipeCardPicker: React.FC<SwipeCardPickerProps> = ({
     : [];
   const currentGroupHandled = currentGroupItems.filter((item) => item.status !== 'PENDING').length;
   const pendingGroupItems = currentGroupItems.filter((item) => item.status === 'PENDING');
+  const currentGroup = currentItem.groupId
+    ? groups.find((group) => group.id === currentItem.groupId)
+    : undefined;
   const groupQuickAllAllowed =
+    currentGroup?.pickAllPolicy === 'SAFE_CHILDREN_ONLY' &&
     pendingGroupItems.length > 1 &&
     pendingGroupItems.every((item) => getPickAllBlockReasons(item).length === 0);
 
