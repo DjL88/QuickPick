@@ -72,6 +72,10 @@ export const SwipeCardPicker: React.FC<SwipeCardPickerProps> = ({
     ? items.filter((item) => item.groupId === currentItem.groupId)
     : [];
   const currentGroupHandled = currentGroupItems.filter((item) => item.status !== 'PENDING').length;
+  const pendingGroupItems = currentGroupItems.filter((item) => item.status === 'PENDING');
+  const groupQuickAllAllowed =
+    pendingGroupItems.length > 1 &&
+    pendingGroupItems.every((item) => getPickAllBlockReasons(item).length === 0);
 
   const handleTouchStart = (e: React.TouchEvent | React.MouseEvent) => {
     setIsDragging(true);
@@ -156,6 +160,16 @@ export const SwipeCardPicker: React.FC<SwipeCardPickerProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {groupQuickAllAllowed && (
+        <button
+          type="button"
+          onClick={() => pendingGroupItems.forEach((item) => onPickUnit(item, true))}
+          className="mb-2 min-h-12 w-full rounded-xl border border-violet-200 bg-white px-4 text-sm font-semibold text-violet-800 shadow-sm transition active:scale-[0.98]"
+        >
+          Pick all {pendingGroupItems.length} safe bundle items
+        </button>
       )}
 
       {/* Main Interactive Card Stack */}
@@ -286,6 +300,15 @@ export const SwipeCardPicker: React.FC<SwipeCardPickerProps> = ({
             {currentItem.substitutionState && currentItem.substitutionState !== 'NONE' && (
               <div className="mt-1.5 rounded-md border border-sky-200 bg-sky-50 px-2 py-1 text-xs font-medium text-sky-800">
                 Substitute: {currentItem.substitutionState.replaceAll('_', ' ').toLowerCase()}
+              </div>
+            )}
+            {currentItem.syncState && currentItem.syncState !== 'SYNCED' && (
+              <div className={`mt-1.5 rounded-md border px-2 py-1 text-xs font-medium ${
+                currentItem.syncState === 'FAILED'
+                  ? 'border-rose-200 bg-rose-50 text-rose-800'
+                  : 'border-amber-200 bg-amber-50 text-amber-800'
+              }`}>
+                {currentItem.syncState === 'FAILED' ? 'Sync failed — retry from the order' : 'Queued to sync'}
               </div>
             )}
           </div>
