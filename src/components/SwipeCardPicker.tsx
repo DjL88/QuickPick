@@ -18,7 +18,7 @@ import {
   ShieldAlert,
   Camera,
 } from 'lucide-react';
-import { PickingItem } from '@contracts/index.js';
+import { PickingItem, getPickAllBlockReasons } from '@contracts/index.js';
 import { sounds } from '../lib/audio.js';
 
 interface SwipeCardPickerProps {
@@ -67,6 +67,7 @@ export const SwipeCardPicker: React.FC<SwipeCardPickerProps> = ({
   const totalQty = currentItem.quantity || 1;
   const isMultiQty = totalQty > 1;
   const remainingQty = totalQty - currentPicked;
+  const quickAllAllowed = getPickAllBlockReasons(currentItem).length === 0;
 
   const handleTouchStart = (e: React.TouchEvent | React.MouseEvent) => {
     setIsDragging(true);
@@ -186,9 +187,9 @@ export const SwipeCardPicker: React.FC<SwipeCardPickerProps> = ({
           <div className="flex items-center justify-between z-10 text-xs">
             <div className="flex items-center gap-1.5 text-neutral-700 font-medium">
               <MapPin className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
-              <span>{currentItem.aisle || 'Aisle 1'}</span>
+              <span>{currentItem.aisle || 'Location not set'}</span>
               <span className="text-neutral-300">·</span>
-              <span>{currentItem.shelf || 'Bay 1'}</span>
+              <span>{currentItem.shelf || 'Bay not set'}</span>
             </div>
 
             <div className="flex items-center gap-1.5 text-neutral-500 text-[11px]">
@@ -337,7 +338,7 @@ export const SwipeCardPicker: React.FC<SwipeCardPickerProps> = ({
       </div>
 
       {/* Quick shortcut to declare all remaining */}
-      {isMultiQty && (
+      {isMultiQty && quickAllAllowed && (
         <button
           onClick={() => onPickUnit(currentItem, true)}
           className="mt-2 text-[11px] text-neutral-400 hover:text-neutral-700 transition"
