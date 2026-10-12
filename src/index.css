@@ -5,9 +5,81 @@
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
-/* Crisp rendering and smooth scrollbars */
 html {
   font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  overscroll-behavior-y: none;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+button,
+[role="button"] {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+@media (pointer: coarse) {
+  button {
+    min-height: 48px;
+  }
+}
+
+/* Demo dark mode follows the device setting without adding another picker step. */
+@media (prefers-color-scheme: dark) {
+  html {
+    color-scheme: dark;
+    background: #0a0a0a;
+  }
+
+  body,
+  .bg-neutral-50 {
+    background-color: #0a0a0a !important;
+  }
+
+  .bg-white,
+  [class*="bg-white/"] {
+    background-color: #171717 !important;
+  }
+
+  .bg-neutral-100 {
+    background-color: #262626 !important;
+  }
+
+  .text-neutral-950,
+  .text-neutral-900,
+  .text-neutral-800 {
+    color: #fafafa !important;
+  }
+
+  .text-neutral-700,
+  .text-neutral-600,
+  .text-neutral-500 {
+    color: #d4d4d4 !important;
+  }
+
+  .text-neutral-400 {
+    color: #a3a3a3 !important;
+  }
+
+  [class*="border-neutral-2"],
+  [class*="border-neutral-3"] {
+    border-color: #404040 !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
